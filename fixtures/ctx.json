@@ -1,0 +1,7 @@
+[
+  { "text": "Question background: the user wants to know how userData is used." },
+  { "file": "fixtures/src/user_data.rs" },
+  { "children": [
+    { "file": "fixtures/notes.md" }
+  ] }
+]
