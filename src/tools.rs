@@ -53,12 +53,15 @@ pub fn definitions() -> Value {
         "type": "function",
         "function": {
             "name": "search",
-            "description": "Line-based Rust regex search (single-line matches only). Output: `file:line: text`. Caps: 500 matches, 1 MiB per file; skips binary files and symlinks. No case-insensitive, context, or glob flags - for heavy searches, pipe ripgrep output into clank's stdin instead.",
+            "description": "Line-based Rust regex search (single-line matches only). Output: `file:line: text`, context lines in the same format, blank line between groups. Skips binary files, symlinks, and .git directories. Caps: 500 matches, 4 MB per file.",
             "parameters": {
                 "type": "object",
                 "properties": {
                     "pattern": { "type": "string", "description": "Rust regex pattern." },
-                    "path": { "type": "string", "description": "File or directory to search; default '.'." }
+                    "path": { "type": "string", "description": "File or directory to search; default '.'." },
+                    "ignore_case": { "type": "boolean", "description": "Case-insensitive matching; default false." },
+                    "context_lines": { "type": "integer", "minimum": 0, "maximum": 10, "description": "Lines of context around each match; default 0." },
+                    "glob": { "type": "string", "description": "Filename glob filter (*, ?, [...]); default '*'." }
                 },
                 "required": ["pattern"]
             }
@@ -162,7 +165,17 @@ const MAX_FILE_BYTES: u64 = 4_000_000;
 fn search(args: &Value) -> Result<String, String> {
     let pattern = need(args, "pattern")
         .ok_or_else(|| "missing required arg: pattern".to_string())?;
-    let re = regex::Regex::new(pattern).map_err(|e| format!("bad regex {pattern:?}: {e}"))?;
+    let ignore_case = args.get("ignore_case").and_then(Value::as_bool).unwrap_or(false);
+    let context_lines = args
+        .get("context_lines")
+        .and_then(Value::as_u64)
+        .unwrap_or(0)
+        .min(10) as usize;
+    let glob = need(args, "glob").unwrap_or("*");
+    let mut b = regex::RegexBuilder::new(pattern);
+    b.case_insensitive(ignore_case);
+    let re = b.build().map_err(|e| format!("bad regex {pattern:?}: {e}"))?;
+    let g = glob_to_regex(glob).map_err(|e| format!("bad glob {glob:?}: {e}"))?;
     let path = need(args, "path").unwrap_or(".");
     let root = Path::new(path);
 
@@ -170,9 +183,9 @@ fn search(args: &Value) -> Result<String, String> {
     let mut count = 0usize;
     let mut truncated = false;
     if root.is_file() {
-        walk_one(root, &re, &mut out, &mut count, &mut truncated);
+        walk_one(root, &re, &g, context_lines, &mut out, &mut count, &mut truncated);
     } else if root.is_dir() {
-        walk_dir(root, &re, &mut out, &mut count, &mut truncated);
+        walk_dir(root, &re, &g, context_lines, &mut out, &mut count, &mut truncated);
     } else {
         return Err(format!("{path}: no such file or directory"));
     }
@@ -185,6 +198,59 @@ fn search(args: &Value) -> Result<String, String> {
     Ok(out)
 }
 
+/// Simple glob (* ? [...]) to a full-match regex over the file name.
+fn glob_to_regex(glob: &str) -> Result<regex::Regex, regex::Error> {
+    let chars: Vec<char> = glob.chars().collect();
+    let mut re = String::from("^");
+    let mut i = 0;
+    while i < chars.len() {
+        if chars[i] == '!' && chars.get(i + 1) == Some(&'[') {
+            // negated class: ![abc] -> [^abc]
+            let mut j = i + 2;
+            while j < chars.len() && chars[j] != ']' {
+                j += 1;
+            }
+            if j >= chars.len() {
+                return Err(regex::Error::Syntax("unclosed '[' in glob".to_string()));
+            }
+            let body: String = chars[i + 2..j].iter().collect();
+            re.push_str("[^");
+            re.push_str(&body);
+            re.push(']');
+            i = j + 1;
+            continue;
+        }
+        match chars[i] {
+            '*' => re.push_str(".*"),
+            '?' => re.push('.'),
+            '[' => {
+                let start = i;
+                let mut j = i + 1;
+                if j < chars.len() && (chars[j] == '!' || chars[j] == '^') {
+                    j += 1;
+                }
+                while j < chars.len() && chars[j] != ']' {
+                    j += 1;
+                }
+                if j >= chars.len() {
+                    return Err(regex::Error::Syntax("unclosed '[' in glob".to_string()));
+                }
+                let mut cls: String = chars[start..=j].iter().collect();
+                if cls.get(1..2) == Some("!") {
+                    cls.replace_range(1..2, "^");
+                }
+                re.push_str(&cls);
+                i = j + 1;
+                continue;
+            }
+            c => re.push_str(&regex::escape(&c.to_string())),
+        }
+        i += 1;
+    }
+    re.push('$');
+    regex::Regex::new(&re)
+}
+
 fn is_binary(b: &[u8]) -> bool {
     b.iter().take(8000).any(|&b| b == 0)
 }
@@ -192,10 +258,16 @@ fn is_binary(b: &[u8]) -> bool {
 fn walk_one(
     p: &Path,
     re: &regex::Regex,
+    g: &regex::Regex,
+    ctx: usize,
     out: &mut String,
     count: &mut usize,
     truncated: &mut bool,
 ) {
+    let name = p.file_name().and_then(|s| s.to_str()).unwrap_or("");
+    if !g.is_match(name) {
+        return;
+    }
     let Ok(meta) = fs::metadata(p) else { return };
     if meta.len() > MAX_FILE_BYTES {
         return;
@@ -205,21 +277,37 @@ fn walk_one(
         return;
     }
     let text = String::from_utf8_lossy(&bytes);
-    for (n, line) in text.lines().enumerate() {
-        if re.is_match(line) {
-            out.push_str(&format!("{}:{}: {}\n", p.display(), n + 1, line.trim_end()));
-            *count += 1;
-            if *count >= SEARCH_CAP {
-                *truncated = true;
-                return;
-            }
+    let lines: Vec<&str> = text.lines().collect();
+    let n = lines.len();
+    let mut last_end: usize = 0;
+    let mut first = true;
+    for (idx, line) in lines.iter().enumerate() {
+        if !re.is_match(line) {
+            continue;
         }
+        *count += 1;
+        if *count >= SEARCH_CAP {
+            *truncated = true;
+            return;
+        }
+        let lo = idx.saturating_sub(ctx);
+        let hi = (idx + ctx).min(n - 1);
+        if !first && lo > last_end + 1 {
+            out.push('\n');
+        }
+        for k in lo..=hi {
+            out.push_str(&format!("{}:{}: {}\n", p.display(), k + 1, lines[k].trim_end()));
+        }
+        last_end = hi;
+        first = false;
     }
 }
 
 fn walk_dir(
     dir: &Path,
     re: &regex::Regex,
+    g: &regex::Regex,
+    ctx: usize,
     out: &mut String,
     count: &mut usize,
     truncated: &mut bool,
@@ -234,6 +322,9 @@ fn walk_dir(
             continue;
         }
         if ft.as_ref().map(|t| t.is_dir()).unwrap_or(false) {
+            if e.file_name() == std::ffi::OsStr::new(".git") {
+                continue;
+            }
             dirs.push(p);
         } else if p.is_file() {
             files.push(p);
@@ -244,14 +335,14 @@ fn walk_dir(
         if *truncated {
             return;
         }
-        walk_one(&p, re, out, count, truncated);
+        walk_one(&p, re, g, ctx, out, count, truncated);
     }
     dirs.sort();
     for d in dirs {
         if *truncated {
             return;
         }
-        walk_dir(&d, re, out, count, truncated);
+        walk_dir(&d, re, g, ctx, out, count, truncated);
     }
 }
 
@@ -306,5 +397,70 @@ fn short(v: &Value) -> String {
         Value::Bool(b) => b.to_string(),
         Value::Null => "-".into(),
         other => format!("…{}chars", other.to_string().len()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn sandbox(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("clank-test-{}-{}", std::process::id(), tag));
+        let _ = fs::remove_dir_all(&d);
+        fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    fn write_file(d: &Path, name: &str, content: &str) -> PathBuf {
+        let p = d.join(name);
+        fs::write(&p, content).unwrap();
+        p
+    }
+
+    #[test]
+    fn search_ignore_case() {
+        let d = sandbox("case");
+        let p = write_file(&d, "a.txt", "UserData\nother\n");
+        let out = search(&json!({"pattern": "userdata", "path": p.to_string_lossy().to_string(), "ignore_case": true})).unwrap();
+        assert!(out.contains("a.txt:1: UserData"));
+        let out = search(&json!({"pattern": "userdata", "path": p.to_string_lossy().to_string()})).unwrap();
+        assert_eq!(out, "no matches\n");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn search_context_separates_groups() {
+        let d = sandbox("ctx");
+        let p = write_file(&d, "b.txt", "a match\nx\ny\nz\nb match\n");
+        let path = p.to_string_lossy().to_string();
+        let out = search(&json!({"pattern": "match", "path": &path, "context_lines": 1})).unwrap();
+        assert_eq!(out, format!("{path}:1: a match\n{path}:2: x\n\n{path}:4: z\n{path}:5: b match\n"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn search_glob_filters_files() {
+        let d = sandbox("glob");
+        let _a = write_file(&d, "a.txt", "hit\n");
+        let _b = write_file(&d, "b.log", "hit\n");
+        let out = search(&json!({"pattern": "hit", "path": d.to_string_lossy().to_string(), "glob": "*.txt"})).unwrap();
+        assert!(out.contains("a.txt:1: hit"));
+        assert!(!out.contains("b.log"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn glob_to_regex_shapes() {
+        let g = glob_to_regex("a?.txt").unwrap();
+        assert!(g.is_match("a1.txt"));
+        assert!(!g.is_match("abc.txt"));
+        let g = glob_to_regex("*.txt").unwrap();
+        assert!(g.is_match("x.txt"));
+        assert!(!g.is_match("x.rs"));
+        let g = glob_to_regex("[abc].md").unwrap();
+        assert!(g.is_match("c.md"));
+        let g = glob_to_regex("![abc].md").unwrap();
+        assert!(g.is_match("d.md"));
+        assert!(!g.is_match("a.md"));
     }
 }

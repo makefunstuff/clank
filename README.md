@@ -71,18 +71,29 @@ no editing:
 |---|---|
 | `read_file(path, start_line?, end_line?)` | numbered file content |
 | `list_dir(path)` | directory entries (name, type, size) |
-| `search(pattern, path?)` | regex search, `file:line: text` output |
+| `search(pattern, path?, ignore_case?, context_lines?, glob?)` | regex search, `file:line: text`; context lines in the same format, blank line between groups |
 | `stat(path)` | file/directory metadata |
 
 Tool errors (missing path, bad args) are returned to the model as data, not
 crashes; a bad context file or a server error is a process failure (exit 1).
 
-**`search` is deliberately weaker than ripgrep/grep.** It is line-based
-single-line Rust-regex matching (no multi-line patterns, no case-insensitive,
-context, or glob flags), capped at 500 matches and 1 MiB per file, and it
-skips binary files and symlinks. That is the unix answer: compose with the
-real tool instead of rebuilding it — `rg "pattern" -g '*.rs' | clank -m
-"what does this do?"` — or point `search` at a narrow directory.
+**`search` is deliberately weaker than ripgrep/grep.** It is line-based,
+single-line Rust-regex matching (no multi-line patterns), capped at 500
+matches and 4 MB per file, and it skips binary files, symlinks, and `.git`
+directories. Flags: `ignore_case`, `context_lines` (0–10), `glob` (filename
+filter). For heavy or multi-line searches, compose with the real tool
+instead of rebuilding it — `rg "pattern" -g '*.rs' | clank -m "what does
+this do?"` — or point `search` at a narrow directory.
+
+## Design notes
+
+- **Stateless per invocation**: context goes in (pipe or file), data comes
+  out (stdout). No session files, no state on disk.
+- **Tools are data, not code paths**: each tool is one JSON schema entry plus
+  one `fn(&Value) -> String` dispatch; `--jsonl` events are the module
+  boundary, so `clank --jsonl | jq` and `clank --jsonl | clank` compose.
+- **The capability boundary is the design**: no shell, no editing, no
+  deletion. Anything beyond read-only observation composes outside the pipe.
 
 ## Configuration
 

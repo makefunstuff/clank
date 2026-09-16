@@ -8,13 +8,12 @@
 #   stage 3  finalize : corrected script, emitted as JSON per --json-schema
 #                       (tools off: this server build rejects tools + schema)
 #   stage 4  one-liner : model proposes a single bash one-liner that runs
-#                       and verifies stage 3; we execute it
-#
+#                       and verifies stage 3; syntax-checked only - model
+#                       output is never executed by this script
 # Traces: one --jsonl file per stage under local/demo-traces/ (gitignored).
 #
-# NOTE: stage 4 executes model-generated bash in this directory. This is a
-# controlled demo, not untrusted code.
-set -euo pipefail
+# NOTE: model output is data in this script - it is syntax-checked but
+# never executed. Inspect the traces and run things yourself.
 cd "$(dirname "$0")"
 
 C=./target/release/clank
@@ -52,7 +51,8 @@ CMD=$("$C" --model "$M" --base-url "$B" \
   -m 'The context is the content of the file local/demo-traces/final.sh. Propose a single bash one-liner that runs `bash local/demo-traces/final.sh`, verifies the output contains <html and the heading Notes, and prints VERIFIED on success. Output JSON matching the schema: an object with a single string property "cmd". Output ONLY the JSON.' \
   --json-schema '{"type":"object","properties":{"cmd":{"type":"string"}},"required":["cmd"]}' \
   --no-tools --jsonl | tee "$T/4-oneliner.jsonl" | jq -r 'select(.type=="assistant") | .content' | jq -r .cmd)
-echo "  executing: $CMD"
-bash -c "$CMD"
+# syntax-check only: model output is data, never executed by this script
+bash -n <(printf '%s' "$CMD")
+echo "  one-liner (syntax-checked, not executed): $CMD"
 
-echo "demo: all stages passed"
+echo "demo: all stages passed (model output never executed)"
