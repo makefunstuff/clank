@@ -62,9 +62,10 @@ struct Args {
     #[arg(trailing_var_arg = true)]
     prompt: Vec<String>,
 
-    /// context file: JSON tree or plain text (paths relative to cwd)
-    #[arg(short = 'c', long)]
-    context: Option<PathBuf>,
+    /// context files: JSON tree, plain text, or clank JSONL transcript
+    /// (repeatable; concatenated in the order given)
+    #[arg(short = 'c', long, action = clap::ArgAction::Append)]
+    context: Vec<PathBuf>,
 
     /// emit JSONL events on stdout instead of raw text
     #[arg(short = 'j', long)]
@@ -103,6 +104,14 @@ struct Args {
     /// disable tool calling (needed with --json-schema: this server build rejects tools+schema)
     #[arg(long)]
     no_tools: bool,
+
+    /// extra system directive, appended to the built-in system prompt
+    #[arg(long, env = "CLANK_SYSTEM")]
+    system: Option<String>,
+
+    /// print the tool definitions as JSON and exit
+    #[arg(long)]
+    list_tools: bool,
 }
 
 fn main() {
@@ -129,6 +138,13 @@ fn run(args: Args) -> i32 {
         },
         None => None,
     };
+    if args.list_tools {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&tools::definitions()).unwrap_or_default()
+        );
+        return 0;
+    }
 
     // stdin: non-tty means content. It is the prompt when no other prompt is
     // given, otherwise it is a context text node.
@@ -142,24 +158,38 @@ fn run(args: Args) -> i32 {
         }
     };
 
-    let prompt = args
+    let mut prompt = args
         .message
         .clone()
         .or_else(|| (!args.prompt.is_empty()).then(|| args.prompt.join(" ")))
-        .or_else(|| stdin.as_deref().filter(|s| !s.trim().is_empty()).map(str::to_string));
+        .or_else(|| stdin.as_deref().filter(|s| !s.trim().is_empty()).map(str::to_string))
+        .filter(|p| !p.trim().is_empty());
 
-    let Some(prompt) = prompt.filter(|p| !p.trim().is_empty()) else {
-        return fail(Fail::Usage("no prompt: pass -m TEXT, positional text, or pipe stdin".into()));
+    // TTY without a prompt: read one line, unix-style.
+    if prompt.is_none() && std::io::stdin().is_terminal() {
+        let mut line = String::new();
+        if std::io::stdin().read_line(&mut line).is_ok() {
+            prompt = Some(line)
+                .filter(|l| !l.trim().is_empty())
+                .map(|l| l.trim().to_string());
+        }
+    }
+
+    let Some(prompt) = prompt else {
+        return fail(Fail::Usage(
+            "no prompt: pass -m TEXT, positional text, pipe stdin, or run on a TTY".into(),
+        ));
     };
 
-    // context: -c file, or piped stdin when a prompt is present.
-    let mut tree: Option<context::Tree> = None;
-    if let Some(path) = &args.context {
+    // context: -c files (repeatable), or piped stdin when a prompt is present.
+    let mut nodes: Vec<context::Node> = Vec::new();
+    for path in &args.context {
         match context::load_file(path) {
-            Ok(t) => tree = Some(t),
+            Ok(t) => nodes.extend(t.nodes),
             Err(e) => return fail(e),
         }
     }
+    let mut tree: Option<context::Tree> = (!nodes.is_empty()).then_some(context::Tree { nodes });
     if tree.is_none() {
         if let Some(s) = stdin {
             if !s.trim().is_empty() {
@@ -168,8 +198,11 @@ fn run(args: Args) -> i32 {
         }
     }
 
-    let mut messages: Vec<Value> =
-        vec![json!({ "role": "system", "content": tools::SYSTEM_PROMPT })];
+    let system = match &args.system {
+        Some(s) => format!("{}\n\n{}", tools::SYSTEM_PROMPT, s),
+        None => tools::SYSTEM_PROMPT.to_string(),
+    };
+    let mut messages: Vec<Value> = vec![json!({ "role": "system", "content": system })];
     if let Some(t) = tree {
         messages.push(json!({
             "role": "user",
