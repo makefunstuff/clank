@@ -285,7 +285,7 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
         None => None,
     };
     if args.jsonl {
-        emit_run_header(args);
+        emit_run_header(args, &system);
     }
     let runner = Runner::new(args, schema, thinking);
     match items {
@@ -351,12 +351,16 @@ fn parse_thinking(level: &str) -> Result<Option<client::Thinking>, Fail> {
 
 /// The first line of a `--jsonl` run: what produced this trace. A trace is
 /// evidence, and evidence without provenance cannot be checked later.
-fn emit_run_header(args: &Args) {
+fn emit_run_header(args: &Args, system: &str) {
     println!(
         "{}",
         json!({
             "type": "run",
             "clank": env!("CARGO_PKG_VERSION"),
+            // Which system prompt produced this answer: the built-in one alone,
+            // or one with a skill appended. Two traces stay comparable across a
+            // prompt change because this changes when the text does.
+            "prompt": prompt_id(system),
             "model": args.model,
             "base_url": args.base_url,
             "tools": args.tools,
@@ -364,6 +368,17 @@ fn emit_run_header(args: &Args) {
             "argv": redacted_argv(&std::env::args().collect::<Vec<_>>()),
         })
     );
+}
+
+/// A short, stable id for a system prompt: FNV-1a over the text, so no
+/// dependency and the same answer on any machine.
+fn prompt_id(system: &str) -> String {
+    let mut hash: u64 = 0xcbf2_9ce4_8422_2325;
+    for byte in system.as_bytes() {
+        hash ^= u64::from(*byte);
+        hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    format!("{:08x}", hash >> 32)
 }
 
 /// A key on the command line must not end up in a trace file.
@@ -783,5 +798,14 @@ mod tests {
         let missing = payload("@/definitely/not/here").unwrap_err();
         assert_eq!(missing.code(), 1, "a missing file is an IO failure, not a usage error");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn the_prompt_id_is_stable_and_distinguishes_prompts() {
+        let base = "you are clank";
+        assert_eq!(prompt_id(base), prompt_id(base), "same text, same id");
+        assert_ne!(prompt_id(base), prompt_id(&format!("{base} plus a skill")));
+        assert_eq!(prompt_id(base).len(), 8, "short enough for a trace line");
+        assert!(prompt_id(base).chars().all(|c| c.is_ascii_hexdigit()));
     }
 }

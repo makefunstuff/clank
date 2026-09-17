@@ -265,6 +265,10 @@ fn the_default_is_one_prompt_one_request_and_no_tools() {
         !system.contains("read_file"),
         "the default system prompt must not advertise tools the model does not have: {system}"
     );
+    assert!(
+        system.contains("cannot run commands"),
+        "the prompt must forbid narrating actions clank cannot take: {system}"
+    );
 }
 
 #[test]
@@ -795,6 +799,47 @@ fn a_skill_can_be_read_from_a_file_into_the_system_prompt() {
     assert!(
         system.contains("SKILLED"),
         "the skill must reach the system prompt: {system}"
+    );
+}
+
+#[test]
+fn the_run_event_names_the_prompt_that_produced_the_answer() {
+    fn prompt_id_of(stdout: &str) -> String {
+        let first: Value = serde_json::from_str(stdout.lines().next().expect("a first line")).unwrap();
+        assert_eq!(first["type"], "run");
+        let id = first["prompt"].as_str().expect("the run event carries a prompt id").to_string();
+        assert_eq!(id.len(), 8, "{id}");
+        id
+    }
+
+    let stub = Stub::start(vec![Reply::Text("one")]);
+    let first = clank(
+        &["--base-url", &stub.base_url, "--model", "stub", "--jsonl", "-m", "first question"],
+        "",
+    );
+    let id = prompt_id_of(&first.stdout);
+
+    // a different question, same prompt: the id is about the prompt
+    let stub = Stub::start(vec![Reply::Text("two")]);
+    let second = clank(
+        &["--base-url", &stub.base_url, "--model", "stub", "--jsonl", "-m", "another question"],
+        "",
+    );
+    assert_eq!(prompt_id_of(&second.stdout), id);
+
+    // a skill appended to the system prompt: a different effective prompt
+    let stub = Stub::start(vec![Reply::Text("three")]);
+    let skilled = clank(
+        &[
+            "--base-url", &stub.base_url, "--model", "stub", "--jsonl",
+            "--system", "always answer in haiku", "-m", "first question",
+        ],
+        "",
+    );
+    assert_ne!(
+        prompt_id_of(&skilled.stdout),
+        id,
+        "an appended skill changes the effective prompt, so the id must change"
     );
 }
 

@@ -86,6 +86,22 @@ guarantee, and clank does not pretend otherwise.
 clank does not parse, store, or replay reasoning. It is not part of the answer
 and not part of the transcript: a trace is answers and tool calls, not thoughts.
 
+### The system prompt is a contract, not a style guide
+
+It states what the model may assume (the context is everything it has) and what
+it may not do (run commands, change files, narrate actions it did not take), plus
+how to answer (from the context, or say in one line that the answer is not
+there). It does **not** attempt to shape tone, length or formatting.
+
+Two reasons. Every added rule is harness influence the reader can no longer
+attribute — clank's value is that it barely touches the answer. And wording
+effects are not measurable through clank: sampling is the serving stack's
+business (these endpoints run at temperature 1.0 and 0.7, with no per-request
+knob), and an A/B of one brevity directive came out with a different sign in
+different samples. Task-specific instructions belong in `--system @file`, where
+they are per-invocation, versioned as files, and visible in the trace through
+`run.prompt`.
+
 ## Context doctrine
 
 | channel | authority | says what |
@@ -142,7 +158,7 @@ every event of an item additionally carries `i` (1-based) and `of`:
 
 | event | fields |
 |---|---|
-| `run` | the **first line**: `clank`, `model`, `base_url`, `tools`, `thinking`, `argv` (an API key on the command line is redacted). Provenance, so a trace can still be checked months later |
+| `run` | the **first line**: `clank`, `prompt`, `model`, `base_url`, `tools`, `thinking`, `argv` (an API key on the command line is redacted). `prompt` is a short id for the *effective* system prompt — the built-in one alone, or one with a `--system` skill appended — so two traces stay comparable across a prompt change. Provenance, so a trace can still be checked months later |
 | `item` | `input` — emitted once, before an item's work |
 | `tool_call` | `name`, `arguments` (with `--tools`; parsed object, `null` if the model emitted invalid JSON) |
 | `tool_result` | `name`, `ok`, `output` (with `--tools`) |

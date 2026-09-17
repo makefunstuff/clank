@@ -39,7 +39,8 @@ costs.
 - **stdout = data only**: the final assistant text, framed `--each` answers, or
   `--jsonl` events (`run`, `item`, `tool_call`, `tool_result`, `assistant`,
   `error`). Nothing else. A `--jsonl` stream starts with a `run` event naming
-  the model, the endpoint and the argv that produced it (API keys redacted).
+  the model, the endpoint, the argv and an id for the effective system prompt
+  (API keys redacted), so a trace says what produced it.
 - **stderr = diagnostics**: tool breadcrumbs (`> read_file ...`,
   `< read_file ok (N B)`), the model's reasoning with `--show-thinking`, and
   errors. Token accounting stays in the server's log, where it already lives.
