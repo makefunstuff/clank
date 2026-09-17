@@ -271,7 +271,7 @@ compaction, model routing — so the honest reading is not "clank is faster" but
 |---|---|---|
 | ~~`--opt key=<json>`~~ → implemented as `--thinking off|<level>` (2026-09-17) | the per-request fields are documented, and a fixed enum is more discoverable than a generic hatch; `seed`/`temperature` remain unexposed | **[P]** server README |
 | `--show-thinking` → `reasoning_content` on stderr (**implemented** 2026-09-17) | the server already parses it; clank used to discard it, so thinking was paid for invisibly | **[V]** |
-| cost line on stderr from `return_progress` + `stream_options` (**implemented and observed live** 2026-09-17: `in 119, out 3, 93 cached, 0.4s`) | makes the `--each` prefix-cache claim measurable instead of asserted, and prices a stage | **[V]** |
+| ~~cost line on stderr from `return_progress` + `stream_options`~~ — **implemented, then removed** (2026-09-17): it made the prefix-cache claim measurable, and having measured it, clank sends plain OpenAI-compatible requests again and leaves token accounting to the server's log | the measurement survives in §5.2; the field does not | **[V]** |
 | keep the two-phase schema (unconstrained rounds → one constrained answer) | format restrictions degrade reasoning; do not constrain exploration | **[P]** arXiv 2408.02442 |
 | ~~probe whether the chat route applies the `json_schema` grammar~~ — **resolved**: the top-level field is enforced, `response_format` is not | "the server enforces the schema" is load-bearing for the two-phase design; it now holds on evidence | **[V]** probe |
 | keep truncation and empty-turn as failures | nothing in training makes a partial answer self-reporting | **[P]** Anthropic Appendix 2 |

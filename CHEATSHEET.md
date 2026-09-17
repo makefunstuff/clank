@@ -21,7 +21,8 @@ Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
 
 Exit codes: `0` ok · `1` model/server/IO, truncated answer, empty answer, or any
 failed `--each` item · `2` usage. SIGPIPE restored, so `clank … | head` dies
-cleanly. `NO_COLOR` honored; `-q` silences breadcrumbs.
+cleanly. Nothing is ever coloured — there is no `NO_COLOR` to honour; `-q`
+silences breadcrumbs.
 
 ## One-liners
 
@@ -60,8 +61,8 @@ clank --jsonl -m "…" | jq -c 'select(.type=="run")'
 
 | flag | env | meaning |
 |---|---|---|
-| `-m TEXT` / positional | | prompt |
-| `-c FILE` (repeatable) | | context file: JSON tree, plain text, or clank JSONL trace |
+| `-m, --message TEXT` / positional | | prompt |
+| `-c, --context FILE` (repeatable) | | context file: JSON tree, plain text, or clank JSONL trace |
 | `--each` | | run the prompt once per stdin item |
 | `-0` / `--null` | | with `--each`: NUL-separated items (`find -print0`) |
 | `--json-schema JSON` | | constrain the final answer to a JSON schema (one request; the grammar is server-enforced) |

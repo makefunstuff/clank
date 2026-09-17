@@ -278,4 +278,8 @@ that a schema and tools never share a request, that the pipe is still context
 when `-c` is used, that a truncated or empty answer exits `1`, that `--each`
 frames one answer per item and shares the prompt prefix, that a failed item is
 reported without hiding the others, and that the exit codes match the table
-above. Live model behaviour is recorded in the README's *Verified* section.
+above. `tests/docs.rs` guards this document against drift: every flag the binary
+offers must appear in the reference docs, every event type listed in
+`src/context.rs` must have a row in the event table, and every file this repo's
+docs link to must exist. Live model behaviour is recorded in the README's
+*Verified* section.
