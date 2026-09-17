@@ -1,4 +1,9 @@
 //! Blocking OpenAI-compatible SSE chat client (ureq).
+//!
+//! Two decorations live here, and nothing else: one field added to the request
+//! body (reasoning control), and *routing* of the one stream field that is not
+//! the answer (`reasoning_content`). Nothing in this file rewrites, buffers or
+//! repairs the model's answer.
 
 use std::io::{BufRead, Read};
 use serde_json::{json, Value};
@@ -18,38 +23,60 @@ pub struct ToolCall {
     pub arguments: String,
 }
 
+/// Reasoning control for one request.
+///
+/// `Off` disables thinking through the chat template; `Effort` asks for a level
+/// and lets the template decide whether it can honour it. Which levels a given
+/// template accepts is the server's business, not clank's.
+pub enum Thinking {
+    Off,
+    Effort(String),
+}
+
+/// Everything one request needs. A struct rather than ten positional arguments.
+pub struct Request<'a> {
+    pub base_url: &'a str,
+    pub model: &'a str,
+    pub api_key: Option<&'a str>,
+    pub max_tokens: u32,
+    pub messages: &'a [Value],
+    pub tools: &'a Value,
+    pub json_schema: Option<&'a Value>,
+    pub thinking: Option<&'a Thinking>,
+    pub debug_path: Option<&'a str>,
+}
+
 pub fn stream_round(
     agent: &ureq::Agent,
-    base_url: &str,
-    json_schema: Option<&Value>,
-    model: &str,
-    api_key: Option<&str>,
-    max_tokens: u32,
-    messages: &[Value],
-    tools: &Value,
+    req: Request<'_>,
     emit: &mut dyn FnMut(&str),
-    debug_path: Option<&str>,
+    on_thinking: &mut dyn FnMut(&str),
 ) -> Result<Round, Fail> {
-    let url = format!("{base_url}/chat/completions");
+    let url = format!("{}/chat/completions", req.base_url);
     let mut body = json!({
-        "model": model,
-        "messages": messages,
-        "tools": tools,
+        "model": req.model,
+        "messages": req.messages,
+        "tools": req.tools,
         "stream": true,
-        "max_tokens": max_tokens,
+        "max_tokens": req.max_tokens,
     });
-    if let Some(s) = json_schema {
+    if let Some(s) = req.json_schema {
         body["json_schema"] = s.clone();
     }
-    if let Some(p) = debug_path {
+    match req.thinking {
+        Some(Thinking::Off) => body["chat_template_kwargs"] = json!({ "enable_thinking": false }),
+        Some(Thinking::Effort(level)) => body["reasoning_effort"] = json!(level),
+        None => {}
+    }
+    if let Some(p) = req.debug_path {
         let _ = std::fs::write(p, serde_json::to_string_pretty(&body).unwrap_or_default());
     }
 
-    let mut req = agent.post(&url).header("Content-Type", "application/json");
-    if let Some(key) = api_key {
-        req = req.header("Authorization", format!("Bearer {key}"));
+    let mut request = agent.post(&url).header("Content-Type", "application/json");
+    if let Some(key) = req.api_key {
+        request = request.header("Authorization", format!("Bearer {key}"));
     }
-    let mut resp = req
+    let mut resp = request
         .send_json(&body)
         .map_err(|e| Fail::Model(format!("request to {url} failed: {e}")))?;
 
@@ -80,6 +107,7 @@ pub fn stream_round(
             continue;
         }
         let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
+
         let Some(choices) = v.get("choices").and_then(|c| c.as_array()) else { continue };
         for ch in choices {
             if let Some(fr) = ch.get("finish_reason").and_then(|f| f.as_str()) {
@@ -87,9 +115,13 @@ pub fn stream_round(
             }
             let Some(delta) = ch.get("delta") else { continue };
             if let Some(t) = delta.get("content").and_then(|c| c.as_str()) {
-                // `reasoning_content` is deliberately not emitted: stdout is data only.
                 round.text.push_str(t);
                 emit(t);
+            }
+            // Thinking is billed for whether or not anyone looks at it; the
+            // caller decides whether it is worth showing.
+            if let Some(t) = delta.get("reasoning_content").and_then(|c| c.as_str()) {
+                on_thinking(t);
             }
             if let Some(tcs) = delta.get("tool_calls").and_then(|t| t.as_array()) {
                 for tc in tcs {

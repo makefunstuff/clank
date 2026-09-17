@@ -7,15 +7,30 @@ use serde_json::{json, Value};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+/// System prompt when no tools are offered (the default): the piped context is
+/// the whole world, and telling the model so is what keeps the stage honest.
 pub const SYSTEM_PROMPT: &str = "\
 You are `clank`, a minimal unix-style inference harness. You talk to the user through stdout.
-You can observe the local filesystem with these read-only tools (no shell, no editing):
+Your context is what was piped to you; you have no other channel to the world.
+Rules:
+- Answer from the context. If it does not contain the answer, say so in one line instead of guessing.
+- Cite `file:line` when you refer to code.
+- Be concise.
+";
+
+/// System prompt when `--tools` offers the read-only observers: they are for
+/// the lookup the piped context did not cover, never a second source of truth.
+pub const SYSTEM_PROMPT_WITH_TOOLS: &str = "\
+You are `clank`, a minimal unix-style inference harness. You talk to the user through stdout.
+Your context is what was piped to you, and that context is the evidence.
+You can look up what it does not cover with these read-only tools (no shell, no editing):
 - read_file(path, start_line?, end_line?) — read a text file; numbered lines
 - list_dir(path) — list directory entries
 - search(pattern, path?) — regex search under a file or directory; rg-style `file:line: text`
 - stat(path) — metadata for a path (JSON)
 Rules:
 - You only observe: you never write, delete, or run commands.
+- Prefer the piped context; when it and the filesystem disagree, the context is what you were asked about.
 - Cite `file:line` when you refer to code.
 - Be concise.
 ";
@@ -372,7 +387,12 @@ fn stat(args: &Value) -> Result<String, String> {
     {
         use std::os::unix::fs::PermissionsExt;
         if let Some(obj) = v.as_object_mut() {
-            obj.insert("mode".into(), Value::String(format!("{:04o}", md.permissions().mode())));
+            // Permission bits only: `mode()` also carries the file type
+            // (0o100644), which reads like a permission mask but is not one.
+            obj.insert(
+                "mode".into(),
+                Value::String(format!("{:04o}", md.permissions().mode() & 0o7777)),
+            );
         }
     }
     Ok(v.to_string())
@@ -462,5 +482,60 @@ mod tests {
         let g = glob_to_regex("![abc].md").unwrap();
         assert!(g.is_match("d.md"));
         assert!(!g.is_match("a.md"));
+    }
+
+    #[test]
+    fn read_file_shows_the_range_and_what_is_left() {
+        let d = sandbox("read");
+        let body = (1..=10).map(|i| format!("line {i}")).collect::<Vec<_>>().join("\n");
+        let p = write_file(&d, "ten.txt", &body);
+        let path = p.to_string_lossy().to_string();
+
+        let all = read_file(&json!({"path": &path})).unwrap();
+        assert!(all.starts_with(&format!("{path} (10 lines, showing 1..10)")), "{all}");
+        assert!(all.contains("   1 | line 1"), "{all}");
+        assert!(!all.contains("more lines"), "nothing was left out: {all}");
+
+        let window = read_file(&json!({"path": &path, "start_line": 3, "end_line": 4})).unwrap();
+        assert!(window.contains("showing 3..4"), "{window}");
+        assert!(window.contains("   3 | line 3") && window.contains("   4 | line 4"), "{window}");
+        assert!(window.contains("... (6 more lines; use start_line/end_line)"), "{window}");
+
+        let past = read_file(&json!({"path": &path, "start_line": 99})).unwrap();
+        assert!(past.contains("out of range"), "{past}");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn list_dir_names_what_is_there() {
+        let d = sandbox("list");
+        let _ = write_file(&d, "a.txt", "x");
+        fs::create_dir(d.join("sub")).unwrap();
+        let out = list_dir(&json!({"path": d.to_string_lossy().to_string()})).unwrap();
+        assert!(out.contains("a.txt"), "{out}");
+        assert!(out.contains("sub"), "{out}");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn stat_reports_size_and_mode_as_json() {
+        let d = sandbox("stat");
+        let p = write_file(&d, "s.txt", "hello");
+        let out = stat(&json!({"path": p.to_string_lossy().to_string()})).unwrap();
+        let v: Value = serde_json::from_str(&out).expect("stat returns JSON");
+        assert_eq!(v["size"], 5, "{out}");
+        assert!(v["mode"].as_str().unwrap_or("").len() == 4, "{out}");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn a_bad_tool_call_is_data_not_a_panic() {
+        // Unknown tool, missing argument, missing file: all model errors.
+        let (out, ok) = execute("nope", &json!({}));
+        assert!(!ok && out.starts_with("error: unknown tool"), "{out}");
+        let (out, ok) = execute("read_file", &json!({}));
+        assert!(!ok && out.contains("missing required arg: path"), "{out}");
+        let (out, ok) = execute("read_file", &json!({"path": "/definitely/not/here"}));
+        assert!(!ok && out.contains("cannot read"), "{out}");
     }
 }
