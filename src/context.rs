@@ -50,10 +50,11 @@ pub fn is_clank_jsonl(source: &str) -> bool {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
             return false;
         };
+        // `get` only answers for objects, so a non-object has already returned.
         let Some(kind) = v.get("type").and_then(|t| t.as_str()) else {
             return false;
         };
-        if !v.is_object() || !EVENT_TYPES.contains(&kind) {
+        if !EVENT_TYPES.contains(&kind) {
             return false;
         }
     }
