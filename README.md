@@ -1,6 +1,9 @@
 # clank — minimal unix-style local-inference harness
 
-*NB*: This code is automatically generated, and text below as well. Though I read and curated it, you may feel annoyed of llm driven prose. So sorry for that if you are. This repo is a tool what I personally use right now, but eventually it's just a kind of "brainfart idea", of how I would like to interface with llms.
+## Disclaimer
+This code is automatically generated, and text below as well. Though I read and curated it, you may feel annoyed of llm driven prose. So sorry for that if you are. This repo is a tool what I personally use right now, but eventually it's just a kind of "brainfart idea", of how I would like to interface with llms.
+
+## Intro
 
 A small Rust CLI that talks to a local llama-server (OpenAI-compatible
 endpoint with tool calling) the unix way: prompt and context come in via
