@@ -244,7 +244,10 @@ fn the_schema_never_travels_in_the_same_request_as_tools() {
 }
 
 #[test]
-fn the_default_is_one_prompt_one_request_and_no_tools() {
+fn a_question_with_nothing_piped_may_look_around() {
+    // No pipe, no context file, no schema: there is no evidence to hand over, so
+    // the model gets the read-only observers instead of answering from priors --
+    // which is how it produced a fabricated `file:line` citation on 2026-09-17.
     let stub = Stub::start(vec![Reply::Text("pong")]);
     let run = clank(
         &["--base-url", &stub.base_url, "--model", "stub", "-m", "ping"],
@@ -254,21 +257,72 @@ fn the_default_is_one_prompt_one_request_and_no_tools() {
     assert_eq!(run.code, 0, "stderr: {}", run.stderr);
     assert_eq!(run.stdout, "pong", "stdout is the answer and nothing else");
     let reqs = stub.requests();
-    assert_eq!(reqs.len(), 1, "a single-shot prompt is a single request");
+    assert_eq!(reqs.len(), 1, "still one prompt, one request");
+    assert!(
+        tool_count(&reqs[0]) > 0,
+        "with nothing piped the tools are the fallback: {reqs:?}"
+    );
+    let system = messages(&reqs[0])[0]["content"].as_str().unwrap();
+    assert!(
+        system.contains("read_file"),
+        "the prompt must describe what the model may call: {system}"
+    );
+}
+
+#[test]
+fn the_pipe_is_the_evidence_so_the_tools_stay_off() {
+    let stub = Stub::start(vec![Reply::Text("pong")]);
+    let run = clank(
+        &[
+            "--base-url", &stub.base_url, "--model", "stub", "-m", "what is this",
+        ],
+        "some piped evidence\n",
+    );
+
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    let reqs = stub.requests();
     assert_eq!(
         tool_count(&reqs[0]),
         0,
-        "tools are opt-in: the context is what was piped"
+        "the context is what was piped, and nothing else"
     );
     let system = messages(&reqs[0])[0]["content"].as_str().unwrap();
     assert!(
         !system.contains("read_file"),
-        "the default system prompt must not advertise tools the model does not have: {system}"
+        "no tools advertised when evidence was given: {system}"
+    );
+}
+
+#[test]
+fn no_tools_with_nothing_piped_forbids_citing_what_it_never_saw() {
+    let stub = Stub::start(vec![Reply::Text("I would need the file")]);
+    let run = clank(
+        &[
+            "--base-url", &stub.base_url, "--model", "stub", "--no-tools",
+            "-m", "which file defines X?",
+        ],
+        "",
+    );
+
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    let reqs = stub.requests();
+    assert_eq!(tool_count(&reqs[0]), 0, "the flag forces them off");
+    let system = messages(&reqs[0])[0]["content"].as_str().unwrap();
+    assert!(
+        system.contains("No context was provided"),
+        "the prompt must say the context is empty: {system}"
     );
     assert!(
-        system.contains("cannot run commands"),
-        "the prompt must forbid narrating actions clank cannot take: {system}"
+        system.contains("do not cite"),
+        "and must forbid the citation it cannot back: {system}"
     );
+
+    // the two flags are contradictory, and saying so is a usage error
+    let conflict = clank(
+        &["--base-url", &stub.base_url, "--model", "stub", "--tools", "--no-tools", "-m", "x"],
+        "",
+    );
+    assert_eq!(conflict.code, 2, "stderr: {}", conflict.stderr);
 }
 
 #[test]

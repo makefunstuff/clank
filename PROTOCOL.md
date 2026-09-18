@@ -11,7 +11,7 @@
 |---|---|---|
 | 1 | one invocation = (prompt, context) → answer; nothing persists | no session files, no daemon, no cache clank owns. A pipeline re-runs, and has no hidden state to inspect |
 | 2 | the only inter-stage interface is text: stdout, a JSON context tree, a JSONL trace | anything that writes text can feed clank, anything that reads text can consume it |
-| 3 | **the context is exactly what you piped** — the model sees nothing else unless you ask for `--tools` | composition is only trustworthy if the stage boundary is honest: a stage that also reads the filesystem on its own has an input you cannot see in the pipeline |
+| 3 | **the context is exactly what you piped** — the model sees nothing else, unless nothing was piped at all, in which case the tools are the fallback | composition is only trustworthy if the stage boundary is honest: a stage that also reads the filesystem on its own has an input you cannot see in the pipeline. With no pipe there is no boundary to protect and no evidence to hand over |
 | 4 | the capability boundary is observation. No writes, no shell, no network beyond the model endpoint | clank *proposes*; execution is the shell's or the human's. A read-only stage cannot damage the tree it reasons about |
 | 5 | no concurrency inside the process | serial `--each` keeps stdout ordered and the mapping unambiguous; parallelism is `xargs -P`, above clank |
 | 6 | stdout is data, stderr is diagnostics, exit codes are `0` / `1` / `2` | `clank … \| jq` and `clank … \| head` work because nothing else is on stdout |
@@ -37,6 +37,17 @@ model's own tool is a worse `rg` with an invisible input, which is exactly what
 invariant 3 rules out. If a task needs the model to look around more than a
 couple of times, you wanted a pipeline, not a smarter stage.
 
+**The one case that is not a convenience is the empty case.** With nothing piped
+and no `-c` and no items, there is no evidence to hand over, and answering from
+priors means citing files that were never read: measured on 2026-09-17, a
+no-context question produced a confident `src/renderer.ts:14` for a file that does
+not exist — the format of a real answer, with a real line number, exit 0. So when
+no evidence was supplied, the tools are offered by default; every lookup lands on
+stderr, so the model's input is still visible in the two-channel contract.
+`--no-tools` forces the blind case, and then the prompt carries one extra
+sentence: the context is empty, answer from what you know, and never cite a file
+or line you were not given.
+
 **Neither mode is a sandbox.** clank runs with your permissions and `read_file`
 reaches any path you can read — an absolute path, `~/.ssh`, `/etc`. `--tools`
 bounds what the model can *do* (observe, nothing else), not what it can *reach*.
@@ -47,7 +58,8 @@ that cannot read what you are protecting.
 
 | mode | requests sent |
 |---|---|
-| default | **one** request, one answer |
+| default, something piped | **one** request, one answer, no tools |
+| default, nothing piped or `-c`'d | one request, with the read-only tools offered |
 | `--json-schema` | one request, carrying the schema |
 | `--tools` | tool rounds until the model stops calling tools, then that text is the answer |
 | `--tools --json-schema` | tool rounds (no schema), then **exactly one** request carrying the schema and no tools |

@@ -1,0 +1,15 @@
+{
+  "type": "object",
+  "properties": {
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "risk"
+      ]
+    }
+  },
+  "required": [
+    "verdict"
+  ]
+}

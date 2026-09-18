@@ -9,6 +9,12 @@ A small Rust CLI that talks to a local llama-server (OpenAI-compatible
 endpoint with tool calling) the unix way: prompt and context come in via
 argv/stdin, data goes out on stdout, breadcrumbs and errors on stderr.
 
+![clank in a shell](docs/images/clank-demo.svg)
+
+*An actual session — captured and rendered by `scripts/render-demo.py`, so the
+image is regenerated rather than drawn. Four of the five beats are the happy
+path; the last one shows what failure looks like: a legible reason and `exit=1`.*
+
 - [CHEATSHEET.md](CHEATSHEET.md) — flags, one-liners, integrations
 - [docs/use-cases.md](docs/use-cases.md) — real jobs, with the gate and the price
 - [PROTOCOL.md](PROTOCOL.md) — the contract: invariants, request sequence, context doctrine, event set, exit codes
@@ -54,6 +60,12 @@ costs.
 - **prompt**: `-m TEXT`, positional text, piped stdin (stdin is the prompt
   only when no other prompt is given), or a single line from a TTY when
   nothing else is given.
+- **tools**: with *nothing* piped — no stdin, no `-c`, no `--each` items — the model
+  is offered the four read-only observers, because with no evidence to hand over the
+  only honest answer about your workspace is one that looked at it. Every lookup is
+  logged on stderr. When evidence *was* supplied it is the evidence, written by the
+  shell's own tools, so the model gets that and nothing else; `--no-tools` forces it
+  blind (and then the prompt forbids citing a file it was never given).
 - **context**: piped stdin becomes a context node when a prompt is also given
   — a clank trace rendered as a transcript, otherwise the bytes as text, so any
   JSON shape survives the trip; `-c FILE` (repeatable) loads a saved context —
@@ -214,7 +226,8 @@ defaults:
 | `-c` / `--context` | — | — |
 | `--each` | — | false |
 | `-0` / `--null` | — | false |
-| `--tools` | — | false |
+| `--tools` | — | on only when nothing was piped |
+| `--no-tools` | — | false |
 | `--thinking` | — | server default |
 | `--show-thinking` | — | false |
 | `--model` | `CLANK_MODEL` | `qwen3.8-27b-gsq-rco-iq3xxs` |
@@ -267,6 +280,12 @@ spend the budget thinking inside the grammar.
   carries the schema and no tools. The server build rejects tools +
   `json_schema` in one request (400, verified by curl probe), so clank never
   sends them together.
+* Observed 2026-09-17, and the reason the tools default as they do: with nothing
+  piped and no tools, `clank -m "which file defines the transcript rendering, and what
+  is the output cap? cite file:line"` answered *"`src/renderer.ts`, cap 8000 at
+  `src/renderer.ts:14`"* — a file that does not exist, in the citation format of a
+  real answer, exit 0. The same question with the tools offered answered
+  `src/context.rs:68`, cap `400` at `src/context.rs:136`, with the test that asserts it.
 * Offline, no model (`cargo test`): `tests/wire.rs`
   drives the real binary against a stub SSE server that records every request
   body, and asserts what this README and PROTOCOL.md claim — **the default is

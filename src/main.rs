@@ -122,9 +122,13 @@ struct Args {
     #[arg(long, value_name = "JSON")]
     json_schema: Option<String>,
 
-    /// offer the read-only filesystem tools (default: one prompt, one request)
+    /// offer the read-only filesystem tools (default: on only when nothing was piped)
     #[arg(long)]
     tools: bool,
+
+    /// never offer the tools, even with nothing to pipe
+    #[arg(long, conflicts_with = "tools")]
+    no_tools: bool,
     /// reasoning control: off, or a level the server's template may honour
     /// (minimal, low, medium, high, xhigh, max)
     #[arg(long, value_name = "LEVEL")]
@@ -259,14 +263,39 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
     }
     let tree: Option<context::Tree> = (!nodes.is_empty()).then_some(context::Tree { nodes });
 
-    let base = if args.tools {
+    // Tools are the fallback for the case with no evidence: with nothing piped
+    // and no context file and no items, the only honest way to answer a question
+    // about the workspace is to look at it, and every lookup lands on stderr.
+    // When evidence *was* supplied it is the evidence -- written by the shell's
+    // own tools -- so the model gets that and nothing else. A schema asks for a
+    // shaped answer from what it was given, so it does not switch the tools on.
+    let evidence = tree.is_some() || items.is_some();
+    let tools_enabled = if args.tools {
+        true
+    } else if args.no_tools {
+        false
+    } else {
+        !evidence && schema.is_none()
+    };
+
+    let base = if tools_enabled {
         tools::SYSTEM_PROMPT_WITH_TOOLS
     } else {
         tools::SYSTEM_PROMPT
     };
+    let mut system = base.to_string();
+    if !evidence && !tools_enabled {
+        // Nothing was piped and nothing can look: without this the model
+        // answers an empty context with a fabricated `file:line` citation,
+        // observed and reproduced on 2026-09-17.
+        system.push_str(
+            "\nNo context was provided for this question: answer from what you know, and \
+             do not cite a file or line you were not given.\n",
+        );
+    }
     let system = match &args.system {
-        Some(s) => format!("{base}\n\n{}", payload(s)?),
-        None => base.to_string(),
+        Some(s) => format!("{system}\n\n{}", payload(s)?),
+        None => system,
     };
     let mut head: Vec<Value> = vec![json!({ "role": "system", "content": system })];
     if let Some(t) = tree {
@@ -285,9 +314,9 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
         None => None,
     };
     if args.jsonl {
-        emit_run_header(args, &system);
+        emit_run_header(args, &system, tools_enabled);
     }
-    let runner = Runner::new(args, schema, thinking);
+    let runner = Runner::new(args, schema, thinking, tools_enabled);
     match items {
         None => {
             let out = Emitter::new(args, None);
@@ -351,7 +380,7 @@ fn parse_thinking(level: &str) -> Result<Option<client::Thinking>, Fail> {
 
 /// The first line of a `--jsonl` run: what produced this trace. A trace is
 /// evidence, and evidence without provenance cannot be checked later.
-fn emit_run_header(args: &Args, system: &str) {
+fn emit_run_header(args: &Args, system: &str, tools_enabled: bool) {
     println!(
         "{}",
         json!({
@@ -363,7 +392,7 @@ fn emit_run_header(args: &Args, system: &str) {
             "prompt": prompt_id(system),
             "model": args.model,
             "base_url": args.base_url,
-            "tools": args.tools,
+            "tools": tools_enabled,
             "thinking": args.thinking,
             "argv": redacted_argv(&std::env::args().collect::<Vec<_>>()),
         })
@@ -502,17 +531,23 @@ struct Runner<'a> {
     tools_json: Value,
     debug: Option<String>,
     thinking: Option<client::Thinking>,
+    tools_enabled: bool,
 }
 
 impl<'a> Runner<'a> {
-    fn new(args: &'a Args, schema: Option<Value>, thinking: Option<client::Thinking>) -> Self {
+    fn new(
+        args: &'a Args,
+        schema: Option<Value>,
+        thinking: Option<client::Thinking>,
+        tools_enabled: bool,
+    ) -> Self {
         let config = ureq::Agent::config_builder()
             .timeout_per_call(Some(Duration::from_secs(args.timeout)))
             .http_status_as_error(false)
             .build();
         Self {
             agent: ureq::Agent::new_with_config(config),
-            tools_json: if args.tools {
+            tools_json: if tools_enabled {
                 tools::definitions()
             } else {
                 json!([])
@@ -520,6 +555,7 @@ impl<'a> Runner<'a> {
             debug: std::env::var("CLANK_DEBUG").ok(),
             schema,
             thinking,
+            tools_enabled,
             args,
         }
     }
@@ -593,7 +629,7 @@ impl<'a> Runner<'a> {
             }
         };
 
-        if self.args.tools {
+        if self.tools_enabled {
             let mut rounds = 0usize;
             loop {
                 // No schema while tools are on: the pair is rejected by the

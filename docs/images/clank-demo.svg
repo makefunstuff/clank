@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="658" viewBox="0 0 1040 658" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="13">
+<rect width="1040" height="658" rx="10" fill="#1e1e2e"/>
+<path d="M0 10a10 10 0 0 1 10-10h1020a10 10 0 0 1 10 10v24H0z" fill="#181825"/>
+<circle cx="22" cy="17" r="6" fill="#f38ba8"/>
+<circle cx="40" cy="17" r="6" fill="#f9e2af"/>
+<circle cx="58" cy="17" r="6" fill="#a6e3a1"/>
+<text x="520.0" y="21" fill="#6c7086" font-size="12" text-anchor="middle">clank -- ~/Work/clank</text>
+<text x="22" y="76" fill="#89b4fa" font-weight="600" xml:space="preserve">$ clank --list-tools | jq -r &#x27;.[].function.name&#x27;</text>
+<text x="22" y="96" fill="#cdd6f4" xml:space="preserve">read_file</text>
+<text x="22" y="116" fill="#cdd6f4" xml:space="preserve">list_dir</text>
+<text x="22" y="136" fill="#cdd6f4" xml:space="preserve">search</text>
+<text x="22" y="156" fill="#cdd6f4" xml:space="preserve">stat</text>
+<text x="22" y="196" fill="#89b4fa" font-weight="600" xml:space="preserve">$ rg -n userData fixtures | clank --thinking off --max-tokens 90 -m &#x27;what does this do? one line&#x27;</text>
+<text x="22" y="216" fill="#cdd6f4" xml:space="preserve">The userData struct holds identity info (name, email) and anonymizes the email.</text>
+<text x="22" y="256" fill="#89b4fa" font-weight="600" xml:space="preserve">$ printf &#x27;the build is green\ntwo tests failed\ndeploy paused\n&#x27; | clank --each --thinking off --max-tokens 40 --json-schema @fixtures/verdict.schema.json -m &#x27;is this line good or bad news? verdict ok or risk&#x27;</text>
+<text x="22" y="276" fill="#cdd6f4" xml:space="preserve">─── item 1/3 ───</text>
+<text x="22" y="296" fill="#cdd6f4" xml:space="preserve">{&quot;verdict&quot;: &quot;ok&quot;}</text>
+<text x="22" y="316" fill="#cdd6f4" xml:space="preserve"></text>
+<text x="22" y="336" fill="#cdd6f4" xml:space="preserve">─── item 2/3 ───</text>
+<text x="22" y="356" fill="#cdd6f4" xml:space="preserve">{</text>
+<text x="22" y="376" fill="#cdd6f4" xml:space="preserve">  &quot;verdict&quot;: &quot;risk&quot;</text>
+<text x="22" y="396" fill="#cdd6f4" xml:space="preserve">}</text>
+<text x="22" y="416" fill="#cdd6f4" xml:space="preserve"></text>
+<text x="22" y="436" fill="#cdd6f4" xml:space="preserve">─── item 3/3 ───</text>
+<text x="22" y="456" fill="#cdd6f4" xml:space="preserve">{&quot;verdict&quot;: &quot;risk&quot;}</text>
+<text x="22" y="476" fill="#cdd6f4" xml:space="preserve">clank: 3 items, 0 failed</text>
+<text x="22" y="516" fill="#89b4fa" font-weight="600" xml:space="preserve">$ echo &#x27;the build is green&#x27; | clank --thinking off --max-tokens 150 --json-schema @fixtures/verdict.schema.json -m &#x27;verdict and reason&#x27; | jq -c</text>
+<text x="22" y="536" fill="#cdd6f4" xml:space="preserve">{&quot;verdict&quot;:&quot;ok&quot;}</text>
+<text x="22" y="576" fill="#89b4fa" font-weight="600" xml:space="preserve">$ clank --thinking off --max-tokens 4 -m &#x27;write a paragraph about socks&#x27; &gt;/dev/null; echo exit=$?</text>
+<text x="22" y="596" fill="#cdd6f4" xml:space="preserve">clank: answer truncated at 4 tokens (--max-tokens); raise it or narrow the prompt</text>
+<text x="22" y="616" fill="#cdd6f4" xml:space="preserve">exit=1</text>
+</svg>

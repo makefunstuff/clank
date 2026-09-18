@@ -18,6 +18,35 @@ one call ≈ 0.25 s + 0.02 s × output tokens
          + prompt tokens at 1.3 ms cold / 0.02 ms cached
 ```
 
+## Nothing to pipe
+
+The pipe is the evidence — but sometimes the question *is* about the workspace, and
+there is nothing to hand over. clank treats that as its own case: with no stdin, no
+`-c` and no `--each` items, the model is offered the four read-only observers, and
+every lookup it makes lands on stderr where you can see it.
+
+```sh
+clank --thinking off -m "where is the transcript cap defined, and what enforces it? cite file:line"
+```
+
+*Verified:* that question, with nothing piped, answered `src/context.rs:68`,
+`TRANSCRIPT_OUTPUT_CAP = 400` at `src/context.rs:136`, and the call site at `:112`,
+after three logged lookups. The same question **without** the tools answered
+`src/renderer.ts:14`, cap 8000 — a file that does not exist, in the exact citation
+format of a real answer, exit 0. That is why the fallback exists.
+
+When you *want* the blind case — a self-contained question, a deterministic request,
+a benchmark — force it, and the prompt stops inviting citations it cannot back:
+
+```sh
+clank --no-tools -m "write a regex that matches ISO-8601 dates"
+# → No context was provided, so I cannot cite a `file:line`.
+clank --no-tools --json-schema @extract.schema.json -m "pull the fields out of this" < input.txt
+```
+
+The rule in one line: **something piped → that is the evidence and nothing else;
+nothing piped → it may look, and the lookups are visible.**
+
 ## 1. Ask about text you already have
 
 **Explain what a search matched** — the pipe is the evidence, so the model never

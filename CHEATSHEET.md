@@ -27,6 +27,12 @@ silences breadcrumbs.
 ## One-liners
 
 ```sh
+# nothing to pipe? ask about the workspace and let it look around
+clank --thinking off -m "where is the transcript cap defined? cite file:line"
+
+# nothing to pipe and nothing to look at: blind on purpose
+clank --no-tools -m "write a regex that matches ISO-8601 dates"
+
 # ask about a pipe or a file
 rg "userData" src/ | clank --thinking off -m "what does this do?"
 clank --thinking off -m "explain this" < src/main.rs
@@ -69,7 +75,8 @@ clank --jsonl -m "…" | jq -c 'select(.type=="run")'
 | `--system TEXT` | `CLANK_SYSTEM` | directive appended to the built-in system prompt |
 | `--thinking LEVEL` | | `off` disables thinking via the template; a level (`minimal`…`max`) goes as `reasoning_effort`; default sends nothing |
 | `--show-thinking` | | stream the model's reasoning to stderr (billed either way) |
-| `--tools` | | offer the four read-only observers (off by default) |
+| `--tools` | | offer the four read-only observers (default: on only when nothing was piped) |
+| `--no-tools` | | never offer them, even with nothing to pipe |
 | `--list-tools` | | print the tool definitions as JSON, no model call |
 | `--jsonl` / `-j` | | JSONL events on stdout instead of text |
 | `-q` / `--quiet` | | suppress stderr breadcrumbs |
