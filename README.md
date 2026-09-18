@@ -9,11 +9,15 @@ A small Rust CLI that talks to a local llama-server (OpenAI-compatible
 endpoint with tool calling) the unix way: prompt and context come in via
 argv/stdin, data goes out on stdout, breadcrumbs and errors on stderr.
 
-![clank in a shell](docs/images/clank-demo.svg)
+![clank in a shell](docs/images/clank-demo.gif)
 
-*An actual session — captured and rendered by `scripts/render-demo.py`, so the
-image is regenerated rather than drawn. Four of the five beats are the happy
-path; the last one shows what failure looks like: a legible reason and `exit=1`.*
+*An actual session, recorded by `scripts/record-demo.sh`: VHS drives a real
+terminal, so the answers, the latency and the exit codes in the recording are the
+ones those commands produced. This run was `qwen3.8-27b-uncensored` on
+`http://127.0.0.1:58777/v1`. Five beats — the four read-only observers; the pipe
+as context; `--each` mapping one prompt over three items; a schema-constrained
+answer through `jq`; and last, what failure looks like: a legible reason and
+`exit 1`.*
 
 - [CHEATSHEET.md](CHEATSHEET.md) — flags, one-liners, integrations
 - [docs/use-cases.md](docs/use-cases.md) — real jobs, with the gate and the price
@@ -259,6 +263,13 @@ A demo that prints "passed" after producing a broken artifact is worse than no
 demo — that is not a hypothetical, it is what the first version of this script
 did. All stages run with `--thinking off`: the schema'd ones would otherwise
 spend the budget thinking inside the grammar.
+
+The image at the top of this file is a second, shorter take on the same idea:
+`scripts/demo.tape` (a VHS tape) holds five beats, each one shell command with
+its own exit-status gate, and `scripts/record-demo.sh` resolves the binary, the
+endpoint and the model, warms the model, records the tape against a live server,
+and fails if the GIF it produced is missing or empty. Re-recording is one
+command; nothing in the GIF is drawn or replayed from a canned transcript.
 
 ## Verified
 

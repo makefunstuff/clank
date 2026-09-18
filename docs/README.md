@@ -2,7 +2,7 @@
 
 | file | what it is |
 |---|---|
-| [images/clank-demo.svg](images/clank-demo.svg) | the README's demo image, a real session rendered by `scripts/render-demo.py` |
+| [images/clank-demo.gif](images/clank-demo.gif) | the README's demo: a real session recorded by `scripts/record-demo.sh` (VHS tape `scripts/demo.tape`) |
 | [use-cases.md](use-cases.md) | real jobs: the command, the gate that says it worked, the price |
 | [research-harness-constraints.md](research-harness-constraints.md) | harness research: what the model already guarantees, probe results, latency measurements, clank vs pi |
 | [decision-readout.md](decision-readout.md) | research: reading option probabilities instead of generating answers (Jev/OpenJev pattern) |
