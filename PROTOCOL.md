@@ -24,12 +24,18 @@ step stays inspectable:
 | you want the model to | compose it |
 |---|---|
 | read a file | `cat f \| clank -m "…"`, `sed -n '10,40p' f \| clank -m "…"` |
-| search | `rg -n "pat" \| clank -m "…"`, `rg -l "pat" \| clank --each -m "summarize this file"` |
+| search | `rg -n "pat" \| clank -m "…"`, `rg -n "pat" . \| clank --each -m "one line: is this match a problem?"` |
 | see what changed | `git diff \| clank -m "…"` |
 | look twice / follow up | `clank --jsonl -m "…" \| clank -m "continue"` |
 | fan out over N things | `rg -l … \| clank --each`, `find … -print0 \| clank --each -0` |
 | act on the answer | `clank … \| jq -er .script > s.sh && bash -n s.sh`, then run it yourself |
 | chain stages | the shell — see `demo.sh` |
+
+An `--each` item is **text, not a file**: `rg -l … | clank --each` hands the model
+path strings, so either ask something a path can answer, or let the shell read the
+file (`-c` per item, `</dev/null`). Measured 2026-09-19 on oMLX: asked to summarize
+paths, the models answered *"This file exists but its purpose is not described in
+the provided context."*
 
 `--tools` exists for the one lookup the pipe did not cover inside a single
 stage, and for that it is a convenience, never a substitute: a search by the

@@ -90,7 +90,7 @@ Ask a model about text you already have, and get back something your shell can a
 ```sh
 rg -n -C3 "userData" src/ | clank --thinking off -m "what does this do?"
 git diff | clank --thinking off --max-tokens 400 -m "review this diff, one line per issue"
-rg -l "TODO" src/ | clank --each --thinking off -m "one-line summary"
+rg -n "TODO" src/ | clank --each --thinking off -m "one line: actionable now, or not?"
 clank --json-schema @schema.json -m "extract the findings" | jq -er .
 clank --jsonl -m "summarize" | clank -m "what did you say?"
 clank --system @prompts/review-sh.md -c script.sh -m "review the script"
@@ -145,20 +145,40 @@ One prompt over every item on stdin, serially, one conversation per item. The it
 are the context, so the prompt has to come from `-m`/positional.
 
 ```sh
-rg -l "TODO" src/ | clank --each -m "one-line summary of this file"
-find src -name '*.rs' -print0 | clank --each -0 -m "any overflow risk here?"
+git log --format=%s -3 | clank --each -m "one line: rewrite in the imperative mood"
+find src -name '*.rs' -print0 | clank --each -0 -m "one line: what is this path for?"
 ```
 
 Text mode frames each answer with the item it belongs to, so stdout maps back to
 stdin (`awk '/^─── item /{…}'` splits it):
 
 ```
-─── item 1/2 ───
-src/main.rs: parses args and drives the loop.
+─── item 1/3 ───
+readme: add install section and fix name clash
 
-─── item 2/2 ───
-src/tools.rs: four read-only observers.
+─── item 2/3 ───
+use-cases §9: implement loop and goal in eight lines of shell
+
+─── item 3/3 ───
+readme: third shorter and remove essay voice
 ```
+
+**An item is text, not a file.** The item is the context, so `rg -l "TODO" src/ |
+clank --each -m "summarize this file"` hands the model a filename and nothing else,
+and it answers accordingly — measured on oMLX (2026-09-19): *"This file exists but
+its purpose is not described in the provided context."* To summarize files, let the
+shell read them:
+
+```sh
+for f in src/*.rs; do
+  clank -c "$f" -m "one line: what is this file responsible for?" </dev/null
+  echo
+done
+```
+
+`</dev/null` because clank reads stdin — without it the first call eats the rest of
+the list. Content you already gathered maps fine: `rg -n "TODO" src/ | clank --each
+-m "one line: actionable now, or not?"`.
 
 `--jsonl` adds `i` (1-based) and `of` to every event and emits one `item` event
 carrying the input before the work starts, so a consumer never has to guess. A

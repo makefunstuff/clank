@@ -6,6 +6,7 @@ the context is exactly what you piped — the shell does the searching, the
 fan-out and the looping.
 
 - **[docs/use-cases.md](docs/use-cases.md)** — real jobs, verified commands, prices and gates
+- **[docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md)** — running it against local models on a 16 GB Mac: which model per job, hallucination probes
 - **[PROTOCOL.md](PROTOCOL.md)** — the contract: invariants, request sequence, event set, exit codes
 
 Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
@@ -43,9 +44,17 @@ clank -c ctx.json -m "summarize"
 clank -c a.json -c b.txt -m "summarize both"
 #   [{"text": "…"}, {"file": "rel/path"}, {"children": [{"file": "a.md"}]}]
 
-# map one prompt over many items, one framed answer each
-rg -l "TODO" src/ | clank --each --thinking off -m "one-line summary"
-find src -name '*.rs' -print0 | clank --each -0 -m "any overflow risk here?"
+# map one prompt over many items, one framed answer each.
+# the item IS the context — hand over text, not paths (see Traps below)
+rg -n "TODO" src/ | clank --each --thinking off -m "one line: actionable now, or not?"
+git log --format=%s -5 | clank --each -m "one line: rewrite in the imperative mood"
+find src -name '*.rs' -print0 | clank --each -0 -m "one line: what is this path for?"
+
+# one file per item: the shell reads it, so the model gets content
+for f in src/*.rs; do
+  clank -c "$f" --thinking off -m "one line: what is this file responsible for?" </dev/null
+  echo
+done
 
 # structured output: one request, grammar enforced by the server
 clank -m "…" --json-schema @schema.json | jq -er .
@@ -99,11 +108,29 @@ one call ≈ 0.25 s + 0.02 s × output tokens
 ```
 
 ```sh
-rg -l "TODO" src/ | clank --each --thinking off -m "one-line summary"   # no thinking
+rg -n "TODO" src/ | clank --each --thinking off -m "one line: actionable?"   # no thinking
 clank -c big-context.json -m "…"                                        # stable head = cached prefix
 clank -m "the first line is all I need" | head -1                       # stop early, 12× faster
 printf '%s\n' a b c | clank --json-schema @list-schema.json -m "…"      # one call, three items
 ```
+
+## Traps
+
+- **`--each` items are text, not files.** `printf 'src/main.rs\n' | clank --each
+  -m "summarize this file"` shows the model the path and nothing else, and it
+  answers accordingly (*"This file exists but its purpose is not described in the
+  provided context"*, measured on oMLX 2026-09-19). Read files in the shell — the
+  `-c` loop above — or pipe content you already gathered (`rg -n …`).
+- **A `while read` loop must give each call its own stdin.** clank reads stdin, so
+  without `</dev/null` the first call eats the rest of the item list.
+- **`--json-schema` is the server's grammar to enforce, not clank's.** It is not
+  enforced everywhere it is accepted: measured on oMLX, one model returned bare
+  JSON, one wrapped it in a fence, one answered in prose. Gate with `jq -er`.
+- **A budget overrun is `exit 1`, not a short answer.** `--max-tokens` cutting the
+  answer is a failure by design, so it cannot ship through a `&&` chain.
+- **`xargs -P` against one endpoint is not free parallelism.** Measured on oMLX:
+  12.5 s with `-P2` against 5.8 s serial over four files, plus interleaved stdout.
+  It went the other way on llama.cpp (`docs/use-cases.md` §3) — measure yours.
 
 ## Integrations
 

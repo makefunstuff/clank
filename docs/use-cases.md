@@ -12,6 +12,10 @@ DeepSeek gateway on `:4000`. Blocks containing `…` placeholders illustrate
 a rule rather than a runnable line; the herdr block is marked "syntax verified,
 not executed" with the reason.
 
+The model-specific side of this — which model per job, what the small ones get
+wrong, and the probes behind that — is in
+[macbook-omlx-local-inference.md](macbook-omlx-local-inference.md).
+
 Prices come from the measured cost model (`research-harness-constraints.md` §5.2):
 
 ```
@@ -134,13 +138,24 @@ payload from disk, which is what makes this loop possible without editing clank.
 
 ## 3. Map over many things
 
-**Summarize everything that changed.**
+**Summarize everything that changed.** `--name-only` yields paths, and a path is
+all an `--each` item would give the model — so read the files in the shell and hand
+each one over as context:
 
 ```sh
-git diff --name-only | clank --each --thinking off --max-tokens 120 -m "one-line summary of this file"
+for f in $(git diff --name-only); do
+  clank -c "$f" --thinking off --max-tokens 120 -m "one-line summary of this file" </dev/null
+  echo
+done
 ```
 
-*Cost:* 0.25 s + output per item; 20 items ≈ 8 s serially.
+*Rule, measured 2026-09-19 on oMLX:* an item is text, not a file. The tempting
+`git diff --name-only | clank --each -m "one-line summary of this file"` summarises
+a filename — the models answered *"This file exists but its purpose is not
+described in the provided context."* `</dev/null` matters too: clank reads stdin,
+so without it the first call consumes the rest of the list.
+
+*Cost:* one call per item, 0.25 s + output each.
 
 **Tolerate failures and get a retry list.** A failed item does not stop the run,
 and it does not disappear either.
@@ -169,6 +184,11 @@ printf 'src/context.rs\nsrc/tools.rs\nREADME.md\n' | clank --thinking off --max-
 *Verified:* 3 entries from 1 call. Measured at four items: serial `--each` 2.4 s,
 `xargs -P2` 1.5 s, one batched call 1.6 s — and the gap widens with N.
 
+*Endpoint-dependent:* on oMLX (MLX runtime, 2026-09-19) the same comparison came
+out the other way — 5.8 s serial against 12.5 s with `-P2`, with the parallel
+answers interleaving on stdout. One local engine batches what you send it; measure
+before assuming parallel wins.
+
 ## 4. Keep it fast
 
 The model is the constraint, so the lever is the number of tokens you pay for:
@@ -181,7 +201,7 @@ The model is the constraint, so the lever is the number of tokens you pay for:
 | prefer one call with many items over many small calls | the 0.25 s fixed cost is paid per call | 1.5× on 4 items |
 
 ```sh
-rg -l "TODO" src/ | clank --each --thinking off -m "one-line summary"     # rule 1
+rg -n "TODO" src/ | clank --each --thinking off -m "one line: actionable?"  # rule 1
 clank -c big-cached-context.json -m "…"                                   # rule 2 (same file each time)
 clank -m "the first line only matters" | head -1                          # rule 3
 printf '%s\n' a b c | clank --json-schema @list-schema.json -m "…"        # rule 4
