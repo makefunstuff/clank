@@ -398,6 +398,7 @@ shuffled-context control from §5 (`~/Work/jev-vs-cactus/`, `out/report.md`):
 | Jev `typesafe/jev-1.13` (hosted) | 17/18 = 94% | 2/18 = 11% | **591 ms** | **$0.000015** |
 | jevmlx (local MLX, 3B) | 12/18 = 67% | 5/18 = 28% | 583 ms | $0 |
 | Cactus/Needle 3 (35 MB, `--forced`) | 6/18 = 33% | 8/18 = 44% | 116 ms | $0 |
+| kev-0.6b (local, trained, no credentials) | 16/18 = 89% | 3/18 = 17% | 83 ms | $0 |
 
 Read that table before reaching for a decision engine:
 
@@ -498,9 +499,13 @@ Jev's second half — *read the distribution* — is not available through clank
   second-source-of-truth problem `PROTOCOL.md` rules out. If we want it, it is a
   `--decide` mode with its own wire tests (the branch plan in
   [decision-readout.md](decision-readout.md)), not a flag bolted onto `--json-schema`.
-- **A local Jev clone exists and is cheap**: `jevmlx` (MLX, one batched pass,
-  per-field probability) ran 18 typed decisions at 67% with a 28% control, 0.6 s
-  each, offline. It is a *sidecar* to clank, not a replacement for it.
+- **Two local Jev-shaped engines exist, and the trained one wins**: `jevmlx`
+  (a general MLX model plus a slot readout) ran 18 typed decisions at 67% with a
+  28% control, 0.6 s each; `kev-0.6b` (a *trained* 0.6B, LoRA + pointer readout,
+  serving TypeSafe's own `/v1/systemone`) scored **16/18 = 89%** with a 17%
+  control at an **83 ms median**, no network and no credentials. Both are sidecars
+  to clank rather than replacements for it — and `clank-jev` is the sidecar that
+  talks to either (`--provider kev`, `--provider openrouter`).
 
 ### 7. What does not transfer
 

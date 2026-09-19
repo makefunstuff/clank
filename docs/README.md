@@ -7,6 +7,7 @@
 | [research-harness-constraints.md](research-harness-constraints.md) | harness research: what the model already guarantees, probe results, latency measurements, clank vs pi |
 | [decision-readout.md](decision-readout.md) | research: reading option probabilities instead of generating answers (Jev/OpenJev pattern) |
 | [pi-review.md](pi-review.md) | review of `earendil-works/pi` as an implementation: what to steal, what not to copy |
+| [../README.md](../README.md#decisions-for-routing-clank-jev) | the sibling binary: typed decisions for routing, providers `typesafe` / `openrouter` / `kev`, gates in the exit code |
 | [macbook-omlx-local-inference.md](macbook-omlx-local-inference.md) | clank with oMLX-served local models on a 16 GB M1 Pro: which model per job, the programming workflow as one-liners, hallucination probes, what to take from Jev to make it less hallucinatory, and what does not work |
 
 The contract itself lives in [../PROTOCOL.md](../PROTOCOL.md); flags and

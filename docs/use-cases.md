@@ -189,6 +189,34 @@ out the other way — 5.8 s serial against 12.5 s with `-P2`, with the parallel
 answers interleaving on stdout. One local engine batches what you send it; measure
 before assuming parallel wins.
 
+## 3b. Route a job to a model
+
+A script that picks its own model needs a *decision*, not prose — and it needs the
+decision to fail loudly when it is not confident. `clank-jev` is that stage; the
+two compose, and neither knows about the other.
+
+```sh
+route=$(printf '%s' "$task" | clank-jev --ask 'What kind of task is this?' \
+          --choice code,prose,math --min-prob 0.7) || route=unclear
+case "$route" in
+  code) clank --model local-code -c src/context.rs -m "$task" ;;
+  prose) clank --model local-fast -m "$task" ;;
+  *) clank --model local-code -m "$task" ;;   # unclear: take the careful path
+esac
+```
+
+*Gate:* the exit code. `--min-prob 0.7` turns a hesitant decision into `exit 1`, so
+`|| route=unclear` catches it before the wrong model is paid for. `--expect` and
+`--expect-min` do the same for a value you already know you need.
+
+*Cost:* one Jev call — measured 83 ms against a local `kev-0.6b`, 591 ms against
+hosted Jev, $0 and $0.000015 respectively — plus the model call you were going to
+make anyway.
+
+*Why a separate binary:* clank's contract is one prompt, one request, one answer,
+no second wire protocol. A decision stage also stands alone in a hook, a Makefile
+or a cron job. See PROTOCOL.md, *Why the decision stage is a separate binary*.
+
 ## 4. Keep it fast
 
 The model is the constraint, so the lever is the number of tokens you pay for:

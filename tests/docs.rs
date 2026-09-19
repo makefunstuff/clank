@@ -18,10 +18,17 @@ fn read(path: &str) -> String {
 
 /// Every long flag the binary offers, minus the two everyone knows.
 fn long_flags() -> Vec<String> {
-    let out = Command::new(env!("CARGO_BIN_EXE_clank"))
-        .arg("--help")
-        .output()
-        .expect("run clank --help");
+    flags_of(env!("CARGO_BIN_EXE_clank"))
+}
+
+/// The same, for the sibling binary: it has its own surface and its own contract,
+/// so it gets the same guard rather than being remembered.
+fn jev_flags() -> Vec<String> {
+    flags_of(env!("CARGO_BIN_EXE_clank-jev"))
+}
+
+fn flags_of(bin: &str) -> Vec<String> {
+    let out = Command::new(bin).arg("--help").output().expect("run --help");
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let mut flags: Vec<String> = Vec::new();
     for token in text.split(|c: char| c.is_whitespace() || c == ',' || c == '[' || c == ']') {
@@ -74,6 +81,66 @@ fn every_flag_is_documented_in_the_reference_docs() {
         missing.is_empty(),
         "flags the binary offers but the docs do not mention: {missing:#?}"
     );
+}
+
+#[test]
+fn every_clank_jev_flag_is_documented_in_the_reference_docs() {
+    let readme = read("README.md");
+    let cheatsheet = read("CHEATSHEET.md");
+    let mut missing: Vec<String> = Vec::new();
+    for flag in jev_flags() {
+        for (name, doc) in [("README.md", &readme), ("CHEATSHEET.md", &cheatsheet)] {
+            if !doc.contains(&flag) {
+                missing.push(format!("{flag} in {name}"));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "flags clank-jev offers but the docs do not mention: {missing:#?}"
+    );
+}
+
+#[test]
+fn the_decision_stage_contract_is_written_down_and_true() {
+    // Its exit codes are a contract for scripts, so they must be in PROTOCOL.md
+    // *and* be the ones the binary actually returns.
+    let protocol = read("PROTOCOL.md");
+    for code in ["0", "1", "2", "3"] {
+        assert!(
+            protocol.contains(&format!("| `{code}` |")) || protocol.contains(&format!("0/1/2/{code}")),
+            "PROTOCOL.md has no row for clank-jev exit code {code}"
+        );
+    }
+    let bin = env!("CARGO_BIN_EXE_clank-jev");
+    let usage = Command::new(bin)
+        .args(["--ask", "which?", "--choice", "a,b", "--provider", "nonsense"])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .unwrap();
+    assert_eq!(usage.status.code(), Some(2), "an unknown provider is usage (2)");
+
+    // no credentials and no local server: the decision cannot be made, and that is
+    // 3, not 1 — "could not ask" is a different failure from "did not pass".
+    let env_clear = |cmd: &mut Command| {
+        cmd.env_remove("TYPESAFE_API_KEY")
+            .env_remove("JEV_API_KEY")
+            .env_remove("JEV_CLI_API_KEY")
+            .env_remove("OPENROUTER_API_KEY");
+    };
+    let mut cmd = Command::new(bin);
+    cmd.args(["--ask", "which?", "--choice", "a,b", "--provider", "typesafe"])
+        .stdin(std::process::Stdio::piped())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped());
+    env_clear(&mut cmd);
+    let mut child = cmd.spawn().unwrap();
+    {
+        use std::io::Write;
+        child.stdin.as_mut().unwrap().write_all(b"state").unwrap();
+    }
+    let out = child.wait_with_output().unwrap();
+    assert_eq!(out.status.code(), Some(3), "missing credentials are 3");
 }
 
 #[test]

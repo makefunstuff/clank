@@ -22,7 +22,8 @@ Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
 | stdin | prompt (if no `-m`/positional), else context; with `--each`, the item list |
 
 Exit codes: `0` ok · `1` model/server/IO, truncated answer, empty answer, or any
-failed `--each` item · `2` usage. SIGPIPE restored, so `clank … | head` dies
+failed `--each` item · `2` usage. `clank-jev` adds `3` for a provider, network or
+credential failure, so "could not ask" never looks like "did not pass". SIGPIPE restored, so `clank … | head` dies
 cleanly. Nothing is ever coloured — there is no `NO_COLOR` to honour; `-q`
 silences breadcrumbs.
 
@@ -80,6 +81,32 @@ clank -c trace.jsonl -m "what did you read?"
 clank --jsonl -m "…" | jq -c 'select(.type=="assistant") | .content'
 clank --jsonl -m "…" | jq -c 'select(.type=="run")'
 ```
+
+## `clank-jev` flags
+
+The decision stage. Credentials come from the environment only.
+
+| flag | meaning |
+|---|---|
+| `--ask TEXT` | one question; needs exactly one of the three shapes below |
+| `--choice A,B,C` | unordered options, printed by name |
+| `--boolean` | yes/no, printed as `true` or `false` |
+| `--score low,mid,high` | ordered levels, lowest first; prints the level number |
+| `--checks FILE` | a JSON file of questions: `{id: {type, instructions, criteria, reasons?}}` |
+| `--min-prob P` | exit 1 if any answer's probability is below this |
+| `--expect VALUE` | exit 1 unless the decision equals this (one question) |
+| `--expect-min N` | exit 1 unless an ordered decision is at least this level |
+| `--print-reason` | print the closed-choice reason instead of the value |
+| `--provider NAME` | `auto`, `typesafe`, `openrouter`, `kev` |
+| `--model ID` | defaults per provider: `jev-latest`, `typesafe/jev-1.13`, `kev-latest` |
+| `--base-url URL` | move the endpoint (a local `kev`, a proxy, a stub) |
+| `--timeout SECS` | per-request timeout, default 60 |
+| `--json` | the full result object instead of the bare value |
+| `-q` / `--quiet` | no diagnostic line on stderr |
+
+`TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) selects the TypeSafe
+route; `OPENROUTER_API_KEY` selects OpenRouter's Decisions endpoint; `--provider
+kev` needs no credential at all.
 
 ## Flags
 

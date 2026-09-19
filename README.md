@@ -25,7 +25,8 @@ reason and `exit 1`.
 ## Install
 
 Not on crates.io — the crate named `clank` there is an unrelated project — and no
-prebuilt binaries. One binary, six direct dependencies, and nothing system-provided
+prebuilt binaries. Two binaries — `clank` and its decision-stage sibling `clank-jev` —
+six direct dependencies, and nothing system-provided
 beyond a C compiler (`ring`, for TLS; no OpenSSL to find):
 
 ```sh
@@ -37,12 +38,13 @@ That directory is on `PATH` if you have installed anything with cargo before; if
 dependency graph to the committed `Cargo.lock`; `--rev <sha>` pins clank itself,
 which is what you want when wiring it into something else.
 
-From a checkout instead, if you would rather read it first — `src/` is 1.9k lines:
+From a checkout instead, if you would rather read it first — `src/` is 2.7k lines:
 
 ```sh
 git clone https://github.com/makefunstuff/clank && cd clank
 cargo build --release     # -> ./target/release/clank
-cargo test                # 24 tests, no model and no network: a stub SSE server
+cargo test                # no model and no network: a stub SSE server and a stub
+                          # JSON one, driven by the real binaries
 ```
 
 At run time it needs an OpenAI-compatible endpoint that does tool calling.
@@ -289,10 +291,17 @@ printf '%s\n' "USER: run the tests, do not touch the config" \
   "reason":"verification_contradiction","reason_probability":1.0}}, ...}
 ```
 
+**Every question shape is available on the command line**, so a script needs no
+file: `--ask` with `--choice A,B,C` (unordered options), `--boolean` (yes/no), or
+`--score low,mid,high` (ordered levels). `--checks FILE` takes the full set, Jev's
+own JSON shape.
+
 **Gates, and the exit codes a script branches on.** `--min-prob` fails a decision
 you asked not to trust; `--expect` and `--expect-min` fail one that is not the
 value you needed. A question the provider skipped, or an answer carrying no
-probability, fails the gate instead of passing by default.
+probability, fails the gate instead of passing by default. `--print-reason` puts
+the closed-choice reason on stdout instead of the value, for a script that routes
+on *why* rather than *what*.
 
 | code | meaning |
 |---|---|
@@ -345,7 +354,8 @@ the gates are for.
 
 ## In a container
 
-`Dockerfile` builds a 32 MB image holding the binary and nothing else.
+`Dockerfile` builds a 32 MB image (33,063,772 bytes by `docker image inspect`)
+holding both binaries and nothing else.
 
 ```sh
 docker build -t clank .
@@ -430,6 +440,14 @@ loader for it; `ubuntu:24.04` and `debian:stable-slim` both work.
   answered; an empty item list exits 0; a truncated or empty answer exits 1 rather
   than reporting success; the `run` event's argv has any `--api-key` redacted; a
   trace with a `run` header still reads back as context.
+* `clank-jev` (the decision stage) is verified live two ways: against hosted Jev
+  through OpenRouter's Decisions endpoint — `fixtures/checks-verification.json`
+  returned `instruction_conflict` and `verification_contradiction`, both at p ≥ 0.93,
+  in one request — and against a local `kev-0.6b` on `:8009`, where 18 typed
+  decisions scored 16/18 with a 17% shuffled-context control at an 83 ms median and
+  no credentials. Its contract is guarded the same way clank's is: `tests/docs.rs`
+  reads its `--help` and requires every flag to appear in README.md and
+  CHEATSHEET.md, and requires PROTOCOL.md to document exit code 3.
 * `demo.sh` ran end to end on 2026-09-17 against `:37313`: four stages, 61 s, all
   gates passed. Its first run found a real defect — an ungated stage wrote a broken
   candidate and the script still announced success. On 2026-09-19 against oMLX it

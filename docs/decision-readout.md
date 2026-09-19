@@ -143,8 +143,24 @@ accuracy goes *up* when the context is scrambled.
 | shape | what it is | verdict |
 |---|---|---|
 | `--use-jev` (client for the Decisions endpoint) | clank POSTs typed questions to `api.alpha.decisions` and prints the typed answer | **no.** A second wire protocol and a second source of truth inside the binary; `PROTOCOL.md` rules the second one out, and the shell can already do it as a stage |
-| a `jev` sidecar (5-line client, or `jevmlx`) | `state | jevdecide --questions q.json` → typed answers with probabilities; clank stays the prose stage | **yes, if a probability is what you need.** Same composition shape as clank, nothing added to clank, and the endpoint is swappable (hosted Jev, or jevmlx offline) |
+| a `jev` sidecar — **built, as `clank-jev`** | `state | clank-jev --ask … --choice …` → the value, or JSON with probabilities; clank stays the prose stage | **yes, and it is what we did.** A second binary in this crate, no change to clank's contract, and the endpoint is a flag: `typesafe`, `openrouter`, or a local `kev` with no credentials |
 | `--decide` with a logit readout | clank sends `logprobs` with the slot tokens and reads the distribution itself — the § branch plan below, Jev's *method*, no Jev | the honest native version, and **blocked on this Mac's oMLX**: it returns no logprobs at all (`choices[0].logprobs` absent, verified on two models). llama.cpp does return them (`:8012` on this box: a one-token request came back with `top_logprobs` including `A` -1.63 vs `Yes` -0.95), so the mode is testable against llama.cpp without giving clank a second protocol |
+
+### What we measured after building it (2026-09-19)
+
+| arm | accuracy | shuffled control | p50 | cost |
+|---|---|---|---|---|
+| clank, closed answer space (local 9B, `--json-schema` enum) | 18/18 = 100% | 11% | 1845 ms | $0 |
+| **`clank-jev --provider kev`** (local trained 0.6B) | **16/18 = 89%** | 17% | **83 ms** | $0 |
+| `clank-jev --provider openrouter` (hosted Jev 1.13) | 17/18 = 94% | 11% | 591 ms | $0.000015 |
+
+The sidecar earns its place, and the local backend is the surprise: a **0.6B
+trained model** lands within five points of hosted Jev on this fixture, passes the
+control, and answers in 83 ms with no network and no key. On kev's own harder
+out-of-domain suites the gap is much wider (0.598–0.631 against Jev's 0.857), so
+treat 89-vs-94 as this fixture, not as a general equivalence. `kev-4b` (the
+checkpoint its authors recommend) serves bf16 only, ~8.5 GB, and does not fit on a
+16 GB Mac beside a resident oMLX model.
 
 ### What would change the answer
 
