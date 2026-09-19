@@ -21,6 +21,47 @@ reason and `exit 1`.
 - [docs/use-cases.md](docs/use-cases.md) — the job families, each with its gate and its price
 - [PROTOCOL.md](PROTOCOL.md) — the contract: invariants, request sequence, context doctrine, event set, exit codes
 
+## Install
+
+Not on crates.io — the crate named `clank` there is an unrelated project — and no
+prebuilt binaries. One binary, six direct dependencies, and nothing system-provided
+beyond a C compiler (`ring`, for TLS; no OpenSSL to find):
+
+```sh
+cargo install --locked --git https://github.com/makefunstuff/clank   # -> ~/.cargo/bin/clank
+```
+
+That directory is on `PATH` if you have installed anything with cargo before; if
+`clank: command not found` is your first result, it is not. `--locked` holds the
+dependency graph to the committed `Cargo.lock`; `--rev <sha>` pins clank itself,
+which is what you want when wiring it into something else.
+
+From a checkout instead, if you would rather read it first — `src/` is 1.9k lines:
+
+```sh
+git clone https://github.com/makefunstuff/clank && cd clank
+cargo build --release     # -> ./target/release/clank
+cargo test                # 24 tests, no model and no network: a stub SSE server
+```
+
+At run time it needs an OpenAI-compatible endpoint that does tool calling.
+llama.cpp's `llama-server` is what it was built against, and the only piece here
+that wants a GPU. Point it at one and check the round trip:
+
+```sh
+export CLANK_BASE_URL=http://127.0.0.1:8080/v1
+export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
+clank -m 'reply with exactly: pong'    # -> pong, exit 0
+```
+
+The built-in defaults (`http://127.0.0.1:40583/v1`,
+`qwen3.8-27b-gsq-rco-iq3xxs`) are one machine's. Those two variables plus the flags
+in [Configuration](#configuration) are the whole configuration — no config file, no
+state on disk — and a model the server does not serve is the usual first failure. It
+is not silent: the server's reason goes to stderr and the exit code is 1.
+
+Container instead of a toolchain: [In a container](#in-a-container).
+
 ## Why not an agent framework
 
 A persistent agent harness is a large program whose tool surface you trust by
