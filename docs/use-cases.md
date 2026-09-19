@@ -7,8 +7,8 @@ price you pay for it.
 
 Every command with a concrete input was run against the local endpoints on
 2026-09-17 (`:40583` qwen3.8-27b unless noted, `--thinking off`), and the
-observations quoted are its output. §8 was run on 2026-09-19 against the DeepSeek
-gateway on `:4000`. Blocks containing `…` placeholders illustrate
+observations quoted are its output. §8 and §9 were run on 2026-09-19 against the
+DeepSeek gateway on `:4000`. Blocks containing `…` placeholders illustrate
 a rule rather than a runnable line; the herdr block is marked "syntax verified,
 not executed" with the reason.
 
@@ -400,3 +400,79 @@ land on top of a live session. `flock` on a lockfile, or check the server first.
 
 **Proposals, never applications.** The file is a queue. Nothing a timer produces
 is applied by the timer — the gate is still a human, just later.
+
+## 9. The loop and the goal, without a framework
+
+What a framework sells as an agent loop and goal-directed behaviour is an `until`
+and an exit code. The model proposes; the shell decides when the work is done,
+because the shell is the only party that can check.
+
+**The goal is a check, not a claim.** The shell knows the answer, so the model
+never gets to announce success:
+
+```sh
+truth=$(find src -name '*.rs' | wc -l)      # the goal, computed by the shell
+until [ "$(sh candidate.sh 2>/dev/null)" = "$truth" ]; do
+  { echo "attempt produced: [$(sh candidate.sh 2>&1 | head -2)]"
+    echo "it must print exactly: $truth"; } \
+    | clank --thinking off --max-tokens 120 \
+        -m "Write a one-line POSIX sh command that prints the number of .rs files under src/. Output only the command." \
+    > candidate.sh
+done
+```
+
+*Verified:* converged on the first attempt, with `find src -name '*.rs' | wc -l`.
+*Cost:* one call per round, and none at all if the first proposal satisfies the
+check. *Gate:* string equality against a number the model never saw.
+
+**The loop feeds the failure back.** The gate's own error is the next round's
+context, so "self-correction" needs no machinery:
+
+```sh
+until jq -e -f proposed.jq fixtures/ctx.json >/dev/null 2>&1; do
+  { echo "the filter so far:"; cat proposed.jq
+    echo "jq says:"; jq -f proposed.jq fixtures/ctx.json 2>&1 | head -1; } \
+    | clank --thinking off --max-tokens 200 \
+        -m "The context is my broken jq filter and jq's error. Fix the filter. Output only the filter." \
+    | tr -d '`' > proposed.jq
+done
+```
+
+*Verified, and the first version did not converge.* Five rounds, every one of them
+a correct filter wrapped in markdown fences; the gate never passed, and the gate was
+right to refuse. The model's answer had been correct from round one — the loop was
+failing on formatting, not on reasoning. `tr -d '`'` in the pipeline fixed it, and
+it then converged in one round. That is the honest cost of owning the loop: its
+failure modes are the shell's, and so are the fixes. A framework hides this one and
+charges you trust for the hiding.
+
+**Workers are `xargs -P`.** No scheduler, no queue:
+
+```sh
+find src -name '*.rs' | xargs -P4 -I{} sh -c \
+  'clank --thinking off --max-tokens 80 -c {} -m "One line: what does this file do?" | sed "s|^|{}: |"'
+```
+
+*Verified:* four files summarized concurrently, one line each.
+*Cost:* four calls at once, against whatever the endpoint will serve in parallel.
+
+**Memory is a file.** `clank --jsonl … > step1.jsonl`, then
+`clank -c step1.jsonl -m "what did you say last?"` answers from the transcript
+(§7). Already verified.
+
+Everything a harness advertises, and what it is here:
+
+| the framework calls it | here |
+|---|---|
+| the agent loop | `until <check>; do …; done` |
+| goal-directed behaviour | the check, which you write, and the model cannot fake |
+| self-correction, reflection | the failure output, as the next round's context |
+| subagents, parallel workers | `xargs -P4` |
+| tool use | the pipe |
+| memory, session state | `-c trace.jsonl`, or any file you keep |
+| context compaction | a pipeline stage of its own, or a `-c` tree you curate |
+| a persistent agent | a timer and a drain file (§8) |
+
+Eight lines of shell, and you own its failure modes. That is the trade: the
+framework's real product is that somebody else owns them — which is the same fact
+as the trust problem.

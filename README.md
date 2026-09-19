@@ -18,7 +18,7 @@ schema-constrained answer through `jq`, and what failure looks like — a legibl
 reason and `exit 1`.
 
 - [CHEATSHEET.md](CHEATSHEET.md) — flags, one-liners, integrations
-- [docs/use-cases.md](docs/use-cases.md) — seven families of job, each with its gate and its price
+- [docs/use-cases.md](docs/use-cases.md) — the job families, each with its gate and its price
 - [PROTOCOL.md](PROTOCOL.md) — the contract: invariants, request sequence, context doctrine, event set, exit codes
 
 ## Why not an agent framework
