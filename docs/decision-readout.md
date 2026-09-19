@@ -112,6 +112,50 @@ clank --decide < decisions.jsonl        # one request per row, one JSON line out
   tokenisers; a model where they are not must fail loudly, which is why the
   check is ported rather than assumed.
 
+
+## Should clank grow `--use-jev`? (measured 2026-09-19)
+
+Short answer: **no — not as a flag inside clank.** The composition already covers it,
+and putting it in the binary buys latency in exchange for a second wire protocol, a
+cloud account and a credential inside a tool whose value is being one honest stage.
+
+What the numbers say. Same fixture, 18 typed decisions (6 `choice`, 6 `noul`,
+6 `score`, chance = 39%), same rows, shuffled-context control included
+(`~/Work/jev-vs-cactus/`):
+
+| arm | accuracy | shuffled control | p50 | cost |
+|---|---|---|---|---|
+| clank, closed answer space (`--json-schema` enum, local 9B) | **18/18 = 100%** | 11% | 1845 ms | $0 |
+| clank, prose (local 9B) | 17/18 = 94% | 11% | 5980 ms | $0 |
+| Jev `typesafe/jev-1.13` via OpenRouter Decisions | 17/18 = 94% | 11% | **591 ms** | $0.000015 |
+| jevmlx (local MLX, 3B, Jev-style readout) | 12/18 = 67% | 28% | 583 ms | $0 |
+| Cactus/Needle 3 (35 MB tool model, forced) | 6/18 = 33% | **44%** | 116 ms | $0 |
+
+So on this box and this task: the **technique** (closed answer space) is worth 6
+points and 3× speed versus prose, and clank already has it in `--json-schema` —
+no Jev required, no network, no account. What Jev adds is **0.59 s instead of
+1.85 s** and **a probability to gate on**, which clank answers do not carry at all.
+Cactus is not in the running as a decision engine: it scores below chance and its
+accuracy goes *up* when the context is scrambled.
+
+### The three shapes, if we ever do want it
+
+| shape | what it is | verdict |
+|---|---|---|
+| `--use-jev` (client for the Decisions endpoint) | clank POSTs typed questions to `api.alpha.decisions` and prints the typed answer | **no.** A second wire protocol and a second source of truth inside the binary; `PROTOCOL.md` rules the second one out, and the shell can already do it as a stage |
+| a `jev` sidecar (5-line client, or `jevmlx`) | `state | jevdecide --questions q.json` → typed answers with probabilities; clank stays the prose stage | **yes, if a probability is what you need.** Same composition shape as clank, nothing added to clank, and the endpoint is swappable (hosted Jev, or jevmlx offline) |
+| `--decide` with a logit readout | clank sends `logprobs` with the slot tokens and reads the distribution itself — the § branch plan below, Jev's *method*, no Jev | the honest native version, and **blocked on this Mac's oMLX**: it returns no logprobs at all (`choices[0].logprobs` absent, verified on two models). llama.cpp does return them (`:8012` on this box: a one-token request came back with `top_logprobs` including `A` -1.63 vs `Yes` -0.95), so the mode is testable against llama.cpp without giving clank a second protocol |
+
+### What would change the answer
+
+- If decisions were being taken at a rate where 1.2 s each matters (thousands per
+  run), the sidecar earns its place on latency alone.
+- If a threshold had to be set on a *calibrated* probability — Jev's own claim, not
+  ours to verify — then only Jev or a local readout can supply it; a prompted JSON
+  number is not a probability.
+- If oMLX grows logprobs, `--decide` becomes the best answer on every axis except
+  latency, and this section should be rewritten.
+
 ## The bar to beat: Needle 3
 
 Read while researching this: [cactus-compute/needle](https://github.com/cactus-compute/needle)

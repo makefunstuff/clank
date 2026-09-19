@@ -385,6 +385,33 @@ clank --thinking off --json-schema "$schema" \
   < candidates.txt | jq -er .id
 ```
 
+### 1b. ...and clank already does this better than Jev here
+
+Same idea, run against a Jev-shaped fixture: **18 typed decisions** (6 `choice`,
+6 `noul`, 6 `score`, chance = 39%), every engine on the same rows, with the
+shuffled-context control from §5 (`~/Work/jev-vs-cactus/`, `out/report.md`):
+
+| arm | accuracy | shuffled control | p50 / decision | cost |
+|---|---|---|---|---|
+| **clank, closed answer space** (`--json-schema` enum, 9B) | **18/18 = 100%** | 2/18 = 11% | 1845 ms | $0 |
+| clank, prose answer (9B) | 17/18 = 94% | 2/18 = 11% | 5980 ms | $0 |
+| Jev `typesafe/jev-1.13` (hosted) | 17/18 = 94% | 2/18 = 11% | **591 ms** | **$0.000015** |
+| jevmlx (local MLX, 3B) | 12/18 = 67% | 5/18 = 28% | 583 ms | $0 |
+| Cactus/Needle 3 (35 MB, `--forced`) | 6/18 = 33% | 8/18 = 44% | 116 ms | $0 |
+
+Read that table before reaching for a decision engine:
+
+- **The technique is what matters, and clank already has it.** Closing the answer
+  space with `--json-schema` beat the prose prompt by 6 points *and* ran 3× faster
+  (1.8 s vs 6.0 s), on the same local model, for $0. Hosted Jev scored the same as
+  clank's prose arm on this fixture.
+- **What Jev still buys is latency and a probability**: 0.59 s against clank's
+  1.85 s, and a distribution you can gate a threshold on — clank answers have no
+  score at all. For 18 decisions that is 12 seconds of wall clock and $0.00027.
+- **The control is what separates the honest engines from the rest.** clank
+  (both arms) and Jev collapse to 11% on shuffled context; jevmlx falls to 28%;
+  Cactus *rises* to 44%, i.e. it never used the state.
+
 ### 2. Always offer "none of these", and honour it
 
 An answer space without an escape hatch forces a guess — that is where invention
@@ -393,6 +420,14 @@ against, the 2B answered `10` (it is 12) and exited 0; asked about a file that d
 not exist, all three models refused, 12 traps out of 12 (`omlx-probes-*.json`).
 Abstention has to be a legitimate answer, and the exit code has to say whether that
 counts as failure *for that call*.
+
+A correction worth recording: an earlier version of this section implied the escape
+hatch might be *abused* — that a local model would take "unknown" and stop deciding.
+That was a bug in the harness, not model behaviour (twelve real answers were scored
+as abstentions because the model emitted `{"value": true}` while the mapper expected
+the string `"true"`, and oMLX does not enforce a schema's types). With the parse
+fixed, the 9B used the escape hatch **zero** times in 18 decisions and scored 18/18.
+Validate what the model actually emits, not what your schema asked for.
 
 ### 3. Verify the claim, not the confidence
 
