@@ -7,7 +7,8 @@ price you pay for it.
 
 Every command with a concrete input was run against the local endpoints on
 2026-09-17 (`:40583` qwen3.8-27b unless noted, `--thinking off`), and the
-observations quoted are its output. Blocks containing `…` placeholders illustrate
+observations quoted are its output. §8 was run on 2026-09-19 against the DeepSeek
+gateway on `:4000`. Blocks containing `…` placeholders illustrate
 a rule rather than a runnable line; the herdr block is marked "syntax verified,
 not executed" with the reason.
 
@@ -315,3 +316,87 @@ frames and `error: …` lines. Tool output beyond the cap is elided with a
 
 *Verified:* with `--tools`, a trace of a `read_file` call re-fed into a new run
 let the model quote the heading it had read.
+
+## 8. Run it on a timer
+
+Everything above assumes you are there. Nothing in clank requires that: the timer
+is the control loop, clank is the stage, and the answer goes to a file you read
+when you feel like it. This is the shape where neither a conversation nor your
+attention is the clock.
+
+The script is the interesting part. A timer cannot see your editor, so the shell
+assembles the evidence — that is the job, and everything else is plumbing:
+
+```sh
+#!/bin/sh
+# ~/.local/bin/clank-sweep — one stage, one answer, appended to a drain file.
+set -eu
+out=${CLANK_SWEEP_OUT:-$HOME/.local/state/clank/sweep.jsonl}
+mkdir -p "$(dirname "$out")"
+cd "$HOME/Work/clank"
+
+ctx=$(git log --since='24 hours ago' --stat --format='%h %s' | head -200)
+[ -n "$ctx" ] || exit 0          # nothing changed: no call, no cost
+
+printf '%s\n' "$ctx" \
+  | clank --thinking off --max-tokens 400 --jsonl \
+      -m "The context is the output of git log --stat for the last day.
+For each commit: one line, what changed and the risk it carries.
+No praise, no preamble, no summary paragraph." \
+      >> "$out"
+```
+
+Two `systemd --user` units run it. `Persistent=true` is why a timer beats a
+crontab line: a run missed because the machine was off still happens.
+
+```ini
+# ~/.config/systemd/user/clank-sweep.service
+[Service]
+Type=oneshot
+Environment=CLANK_BASE_URL=http://127.0.0.1:4000/v1
+Environment=CLANK_MODEL=deepseek/deepseek-v4-flash
+ExecStart=%h/.local/bin/clank-sweep
+```
+
+```ini
+# ~/.config/systemd/user/clank-sweep.timer
+[Timer]
+OnCalendar=daily
+Persistent=true
+RandomizedDelaySec=15m
+
+[Install]
+WantedBy=timers.target
+```
+
+```sh
+systemctl --user daemon-reload && systemctl --user enable --now clank-sweep.timer
+journalctl --user -u clank-sweep -n 20                       # the timer's exit status
+jq -c 'select(.type=="assistant") | .content' ~/.local/state/clank/sweep.jsonl
+```
+
+*Cost:* one call per run, and none at all on a day where nothing changed.
+*Gate:* the exit status in the journal, and the events in the file — `--jsonl` is
+what stops a failed run from looking like a quiet day.
+
+*Verified* on 2026-09-19 against the DeepSeek gateway (`:4000`,
+`deepseek/deepseek-v4-flash`), the script run by hand twice; **the units
+themselves are not installed**. At `--max-tokens 300` it truncated on a
+two-commit day and exited 1 — the contract of §1 — and the file held a lone
+`run` event with no `assistant`, which is exactly how the failure stays visible.
+At 400 it answered. The `run` event carries the model, the endpoint, the prompt
+id and the argv, so the queue explains itself months later. The model also
+ignored "one line" and wrote a paragraph per commit; clank does not police
+length, by design. One of those lines is the argument for the whole shape: it
+noticed that the demo renderer added in one commit was deleted in the next.
+
+Three things this shape needs that an interactive one does not:
+
+**A stable prompt head.** A cached prefix measured 10.4 s → 0.21 s (§4). The
+context varies every run; the instructions must not.
+
+**A story for contention.** The endpoint has finite slots and a nightly job can
+land on top of a live session. `flock` on a lockfile, or check the server first.
+
+**Proposals, never applications.** The file is a queue. Nothing a timer produces
+is applied by the timer — the gate is still a human, just later.

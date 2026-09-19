@@ -265,6 +265,7 @@ Composition is the criterion. Before adding anything, answer these in order:
 | state across runs | re-feed the trace (`-c trace.jsonl`) or a file the shell keeps |
 | writing, editing, running commands | a different process with a real sandbox |
 | multi-stage orchestration | the shell (`demo.sh` is the reference) |
+| scheduling, running unattended | a timer (systemd, or cron) above clank |
 | context compaction | a pipeline stage of its own, or a `-c` tree you curate by hand |
 
 ## Cost
