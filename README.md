@@ -3,7 +3,7 @@
 A Rust CLI that is one stage in a pipeline: prompt and context in on argv/stdin,
 the answer out on stdout, diagnostics on stderr, a verdict in the exit code. It
 speaks to any OpenAI-compatible endpoint — built against llama.cpp's server, since
-verified against a remote gateway too.
+verified against a remote gateway and an MLX one too.
 
 ```sh
 cargo build --release
@@ -20,6 +20,7 @@ reason and `exit 1`.
 - [CHEATSHEET.md](CHEATSHEET.md) — flags, one-liners, integrations
 - [docs/use-cases.md](docs/use-cases.md) — the job families, each with its gate and its price
 - [PROTOCOL.md](PROTOCOL.md) — the contract: invariants, request sequence, context doctrine, event set, exit codes
+- [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) — it running against local models on a 16 GB Mac: which model to use, ten jobs as one-liners, what does not work
 
 ## Install
 
@@ -289,6 +290,12 @@ loader for it; `ubuntu:24.04` and `debian:stable-slim` both work.
 * Endpoints: qwen 3.8 27b (Qwen3.8-27B GSQ-RCO IQ3_XXS) on `:40583` and qwen 3.6
   35B-A3B (Qwen3.6-35B-A3B-UD-Q5_K_S) on `:37313`, both via the OpenAI-compatible
   endpoint with SSE streaming and tool calling; plus a remote gateway on `:4000`.
+  On 2026-09-19, oMLX 0.7.0 on `:8000` serving MLX models on a 16 GB M1 Pro:
+  `Qwen3.5-9B-MLX-4bit`, `MiniCPM5-2B-MLX-8bit` and `gemma-4-E4B-it-MLX-4bit` all
+  answer, stream and expose reasoning; the fourth listed model,
+  `Bonsai-2-27B-CRACK-1.75bit-JANG`, loads on no request at all — the runtime
+  answers 409 and clank prints the server's reason verbatim, 402 parameter names
+  included. Details and raw output in `docs/macbook-omlx-local-inference.md`.
 * **A top-level `json_schema` is the endpoint's grammar to enforce, not clank's.**
   Against the local endpoints it held: asked to reply `beta` under a schema whose
   only legal value was `alpha`, clank printed `{"word":"alpha"}`. Through the
@@ -298,13 +305,21 @@ loader for it; `ubuntu:24.04` and `debian:stable-slim` both work.
   the grammar holds only where it has been measured. A schema and tools never share
   a request; with `--tools` the rounds run unconstrained and one final request
   carries the schema. This server build rejects the pair (400, by curl probe).
+  Measured per model on oMLX the same day: `Qwen3.5-9B-MLX-4bit` returns bare,
+  valid JSON; `gemma-4-E4B-it-MLX-4bit` wraps it in a Markdown fence and
+  `MiniCPM5-2B-MLX-8bit` answers in prose, both of them `exit 1`. One schema,
+  three models, two of them ignoring it — which model carries the grammar is a
+  property to measure, not to assume.
 * The tools fallback exists because of a measured failure. With nothing piped and no
   tools, `clank -m "which file defines the transcript rendering, and what is the
   output cap? cite file:line"` answered *"`src/renderer.ts`, cap 8000 at
   `src/renderer.ts:14`"* — a file that does not exist, in the citation format of a
   real answer, exit 0. The same question with the tools offered answered
   `src/context.rs:68` and cap `400` at `src/context.rs:136`, with the test that
-  asserts it.
+  asserts it. The fallback is still a fallback: on oMLX the 2B reproduced that
+  same invented citation *with* the tools on — two lookups in the stderr
+  breadcrumbs, then `src/renderer.ts:14` again. What survives a model that
+  fabricates is the exit code and the observable channel, not the feature.
 * `--thinking off` arrives as `chat_template_kwargs.enable_thinking=false` and a
   level as `reasoning_effort`, with no field at all by default and exit 2 for an
   unknown level. It removes reasoning on both local endpoints; an effort level is
@@ -321,7 +336,10 @@ loader for it; `ubuntu:24.04` and `debian:stable-slim` both work.
   trace with a `run` header still reads back as context.
 * `demo.sh` ran end to end on 2026-09-17 against `:37313`: four stages, 61 s, all
   gates passed. Its first run found a real defect — an ungated stage wrote a broken
-  candidate and the script still announced success.
+  candidate and the script still announced success. On 2026-09-19 against oMLX it
+  passed on `Qwen3.5-9B-MLX-4bit` in 35 s, and stopped at a different gate on each
+  of the other two: gemma on the fenced schema at stage 3, the 2B on a truncated
+  answer at stage 1.
 * Live: tree context renders text, file and nested nodes in document order;
   `--jsonl` parses with `jq`; repeatable `-c` concatenates files in order (checked
   through the `CLANK_DEBUG` request dump); `--system` appends the directive to the
@@ -329,9 +347,10 @@ loader for it; `ubuntu:24.04` and `debian:stable-slim` both work.
   run as a tagged transcript; `clank … | head -1` exits 0; `--list-tools` prints the
   four definitions without a model call; no prompt with empty stdin exits 2, an
   unreadable context file exits 1, `--help` exits 0.
-* Still unexercised against a live model: `--tools` end to end, and the
-  schema-after-tools sequence. The wire tests cover the request and output contract
-  only. TTY-with-no-prompt reads one line, in code; it is not exercisable headless.
+* `--tools` is no longer unexercised: the oMLX runs sent it through the round
+  loop end to end, with the lookups on stderr as promised. Still unexercised
+  against a live model: the schema-after-tools sequence — the wire tests cover
+  that request and output contract only. TTY-with-no-prompt reads one line, in code; it is not exercisable headless.
 
 ## Provenance
 
