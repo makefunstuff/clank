@@ -33,6 +33,40 @@ cargo build --release   # in clank/
 ./target/release/clank [OPTIONS] [PROMPT...]
 ```
 
+## Why this instead of an agent framework
+
+A persistent agent harness is a large program you delegate to and will never
+read. The problem is not that its code is bad — it is that you cannot audit what
+you did not write, so its tool surface is trusted by default. When that surface
+includes writing files and running commands with your permissions, the trust
+being extended is the whole machine.
+
+Here the surface is text in on stdin, text out on stdout, diagnostics on stderr,
+and a verdict in the exit code. No daemon, no session store, no memory you did
+not hand over, no tool schemas in the context. Everything an "agent" would do
+internally is a pipeline step you can read: `rg`, `git diff`, `jq`, `sed`, and
+`xargs -P` when it has to fan out.
+
+What that buys:
+
+- **You can see the input.** The context is exactly what you piped — nothing else
+  reached the model, and nothing else reached you.
+- **You can see the cost.** One call is one call. No loop re-sending a growing
+  history, no second request you did not ask for.
+- **You can read the whole thing.** The stage is one binary; the workflow is a
+  script you wrote. Both fit in your head at once.
+- **The write stays yours.** clank observes and proposes; a gate someone can read
+  decides, and the human or the shell applies. That boundary is the security
+  property, not a missing feature.
+
+Put it in a container with the tree mounted read-only and the boundary stops
+being a promise clank keeps and becomes one the kernel keeps — which bounds what
+the model can *write*, not what it can *reach*.
+
+What it does not give you: memory across sessions, retrieval you did not
+construct, or an unattended loop that edits your code. Those are the jobs a
+harness is for. This is for the work where the artifact is the interface.
+
 ## What it is for
 
 Ask a model about text you already have, and get back something your shell can
