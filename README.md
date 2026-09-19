@@ -303,6 +303,95 @@ probability, fails the gate instead of passing by default. `--print-reason` puts
 the closed-choice reason on stdout instead of the value, for a script that routes
 on *why* rather than *what*.
 
+`--min-prob` compares against **confidence in the decision**, not the probability of
+"yes". For a yes/no question those differ: a decisive *no* has `probability` near 0
+and `confidence` near 1, so a gate on the raw probability would reject the model for
+being certain. The JSON carries both — `probability` is P(true) for `noul` and the
+winning option's share otherwise, `confidence` is `max(p, 1-p)` for `noul` and the
+provider's own normalized margin for `choice`/`score` when it sends one.
+
+### Combinations
+
+`clank` and `clank-jev` are both stages, so they compose in both orders. Each of
+these was run; the observed behaviour is quoted.
+
+**Route, then generate** — the decision picks the model, clank does the work:
+
+```sh
+route=$(printf '%s' "$task" | clank-jev --ask 'What kind of task is this?' \
+          --choice code,prose,math --min-prob 0.7) || route=unclear
+case "$route" in
+  code) clank --model local-code -c src/context.rs -m "$task" ;;
+  *)    clank --model local-fast -m "$task" ;;
+esac
+```
+
+**Generate, then validate** — clank writes, jev checks it against a rubric, and a
+failed check stops the pipeline. `fixtures/checks-commit.json` asks whether the
+message describes the diff and what shape its subject line has:
+
+```sh
+msg=$(git show HEAD | clank -q --thinking off -m 'Write the commit message for this diff.')
+{ git show --stat HEAD; printf 'MESSAGE:\n%s\n' "$msg"; } \
+  | clank-jev --checks fixtures/checks-commit.json --min-prob 0.6
+```
+
+*Observed:* `describes` = true, reason `no_conflict`, p=0.89 — and the gate still
+fired at `shape` (p=0.500), because `README.md: update …` is a path prefix rather
+than a typed one. That is the gate doing its job on a genuinely ambiguous answer.
+
+**Audit a trace after the fact** — a `--jsonl` trace is evidence, so the watchdog
+questions can be asked of it afterwards:
+
+```sh
+clank --jsonl -m 'where is the transcript cap defined? cite file:line' > trace.jsonl
+clank-jev --checks fixtures/checks-verification.json --min-prob 0.6 < trace.jsonl
+```
+
+*Observed:* `verification` = false, reason `no_conflict` (the citation was real),
+and `instruction` at p=0.23 — no user instruction exists in a trace, so the check
+correctly reports it cannot decide, and the gate fails the run rather than
+reporting a clean bill of health.
+
+**Fan out, act only on confident decisions** — the loop is the shell's:
+
+```sh
+while read -r subject; do
+  v=$(printf '%s' "$subject" | clank-jev -q --ask 'Could this break an existing caller?' \
+        --boolean --min-prob 0.7) || { echo "unclear: $subject"; continue; }
+  [ "$v" = true ] && echo "check: $subject"
+done < <(git log --format=%s -8)
+```
+
+*Observed:* 7 of 8 doc-only subjects decided `false` at confidence ≥ 0.83, and one
+came back `unclear` at 0.68 — the run that found the `--min-prob` semantics above.
+
+**Escalate: local first, hosted only when the local answer is not confident** — a
+credential ladder, the same shape as a model ladder:
+
+```sh
+ask() { printf '%s' "$1" | clank-jev -q --provider "$2" --ask 'Which team owns this?' \
+          --choice BILLING,TECHNICAL,ACCOUNT --min-prob "$3"; }
+v=$(ask "$state" kev 0.9) || v=$(ask "$state" openrouter 0.5)
+```
+
+*Observed:* the local `kev-0.6b` decided `TECHNICAL` at confidence 0.84, below the
+0.9 gate, so the hosted Jev was asked and agreed — 83 ms and $0 spent before
+reaching the network.
+
+**Break a tie between two answers** — two models, one judge:
+
+```sh
+a=$(clank -q --model local-fast -c src/context.rs -m "$task One line.")
+b=$(clank -q --model local-code -c src/context.rs -m "$task One line.")
+printf 'A: %s\n\nB: %s\n' "$a" "$b" \
+  | clank-jev --ask 'Which answer names the exact file:line and the correct value?' --choice A,B --min-prob 0.6
+```
+
+*Observed:* it picked B at p=0.75, confidence 0.51 — and **the gate fired**, because
+neither answer had the right line number. A tie-break that can say "both of these
+are wrong" is the reason to use one.
+
 | code | meaning |
 |---|---|
 | `0` | decided, and every gate passed |

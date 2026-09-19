@@ -1,0 +1,24 @@
+{
+  "describes": {
+    "type": "boolean",
+    "instructions": "Does the MESSAGE describe what the DIFF actually does?",
+    "criteria": {
+      "true": "every claim in the message is supported by the diff",
+      "false": "the message claims something the diff does not do, or omits the main change"
+    },
+    "reasons": {
+      "no_conflict": "the message and the diff agree",
+      "mismatch": "the message claims work the diff does not contain",
+      "missing_evidence": "the diff or the message is absent from the evidence"
+    }
+  },
+  "shape": {
+    "type": "choice",
+    "instructions": "What shape is the subject line?",
+    "criteria": {
+      "conventional": "a typed prefix, like `docs: ...` or `fix: ...`",
+      "plain": "a plain sentence with no prefix",
+      "unclear": "vague, or about something other than this diff"
+    }
+  }
+}

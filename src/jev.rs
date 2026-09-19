@@ -266,6 +266,21 @@ struct Answer {
     /// The closed-choice reason, when the question declared one.
     reason: Option<String>,
     reason_probability: Option<f64>,
+    /// The provider's own confidence, when it sends one (Jev does, for choice and
+    /// score: a normalized margin rather than the winner's share).
+    provider_confidence: Option<f64>,
+}
+
+impl Answer {
+    /// How sure the decision is, as opposed to how probable "yes" is. For a yes/no
+    /// question those differ: a confident *no* has a probability near 0, and a gate
+    /// on the raw probability would reject it for being decisive.
+    fn confidence(&self) -> Option<f64> {
+        match self.kind {
+            Kind::Bool => self.probability.map(|p| p.max(1.0 - p)),
+            _ => self.provider_confidence.or(self.probability),
+        }
+    }
 }
 
 /// One answer, in the shape both providers return once normalised.
@@ -275,7 +290,15 @@ fn read_answer(kind: &Kind, raw: &Value) -> Result<Answer, String> {
     match kind {
         Kind::Bool => {
             let p = num("noul").ok_or("a noul answer without `noul`")?;
-            Ok(Answer { kind: Kind::Bool, value: json!(p >= 0.5), probability: Some(p), distribution: None, reason: None, reason_probability: None })
+            Ok(Answer {
+                kind: Kind::Bool,
+                value: json!(p >= 0.5),
+                probability: Some(p),
+                distribution: None,
+                reason: None,
+                reason_probability: None,
+                provider_confidence: num("confidence"),
+            })
         }
         Kind::Choice => {
             // `choice` is the option name on the TypeSafe route; the OpenRouter
@@ -296,7 +319,15 @@ fn read_answer(kind: &Kind, raw: &Value) -> Result<Answer, String> {
                 .and_then(|d| d.get(&chosen))
                 .and_then(Value::as_f64)
                 .or_else(|| num("confidence"));
-            Ok(Answer { kind: Kind::Choice, value: json!(chosen), probability, distribution: dist, reason: None, reason_probability: None })
+            Ok(Answer {
+                kind: Kind::Choice,
+                value: json!(chosen),
+                probability,
+                distribution: dist,
+                reason: None,
+                reason_probability: None,
+                provider_confidence: num("confidence"),
+            })
         }
         Kind::Score => {
             // TypeSafe returns a fractional, probability-weighted position; the
@@ -320,7 +351,15 @@ fn read_answer(kind: &Kind, raw: &Value) -> Result<Answer, String> {
                 .and_then(|d| d.get(level.to_string()))
                 .and_then(Value::as_f64)
                 .or_else(|| num("confidence"));
-            Ok(Answer { kind: Kind::Score, value: json!(level), probability, distribution: dist, reason: None, reason_probability: None })
+            Ok(Answer {
+                kind: Kind::Score,
+                value: json!(level),
+                probability,
+                distribution: dist,
+                reason: None,
+                reason_probability: None,
+                provider_confidence: num("confidence"),
+            })
         }
     }
 }
@@ -376,9 +415,15 @@ fn gate_failures(args: &Args, questions: &[Question], answers: &[Answer]) -> Vec
     }
     for (q, a) in questions.iter().zip(answers) {
         if let Some(min) = gate.min_prob {
-            match a.probability {
-                Some(p) if p >= min => {}
-                Some(p) => failures.push(format!("{}: p={p:.3} below --min-prob {min}", q.id)),
+            let conf = a.confidence();
+            match conf {
+                Some(c) if c >= min => {}
+                Some(c) => failures.push(format!(
+                    "{}: confidence {c:.3} below --min-prob {min} (decided {}, p={:.3})",
+                    q.id,
+                    a.value,
+                    a.probability.unwrap_or(f64::NAN)
+                )),
                 None => failures.push(format!("{}: no probability to check against --min-prob {min}", q.id)),
             }
         }
@@ -531,6 +576,10 @@ fn render(args: &Args, questions: &[Question], answers: &[Answer], payload: &Val
         }));
         e.insert("value".into(), a.value.clone());
         e.insert("probability".into(), a.probability.map(|p| json!(p)).unwrap_or(Value::Null));
+        e.insert(
+            "confidence".into(),
+            a.confidence().map(|c| json!(c)).unwrap_or(Value::Null),
+        );
         if let Some(d) = &a.distribution {
             e.insert("distribution".into(), d.clone());
         }
@@ -710,7 +759,7 @@ mod tests {
     #[test]
     fn gates_report_every_reason_the_decision_must_not_be_trusted() {
         let q = Question { id: DEFAULT_ID.into(), kind: Kind::Choice, instructions: "?".into(), criteria: json!({}), reasons: None };
-        let low = Answer { kind: Kind::Choice, value: json!("code"), probability: Some(0.4), distribution: None, reason: None, reason_probability: None };
+        let low = Answer { kind: Kind::Choice, value: json!("code"), probability: Some(0.4), distribution: None, reason: None, reason_probability: None, provider_confidence: None };
 
         let failures = gate_failures(&args(&["--min-prob", "0.7"]), std::slice::from_ref(&q), std::slice::from_ref(&low));
         assert_eq!(failures.len(), 1);
@@ -719,19 +768,54 @@ mod tests {
         let failures = gate_failures(&args(&["--expect", "prose"]), std::slice::from_ref(&q), std::slice::from_ref(&low));
         assert!(failures[0].contains("expected \"prose\", decided \"code\""));
 
-        let good = Answer { kind: Kind::Choice, value: json!("code"), probability: Some(0.9), distribution: None, reason: None, reason_probability: None };
+        let good = Answer { kind: Kind::Choice, value: json!("code"), probability: Some(0.9), distribution: None, reason: None, reason_probability: None, provider_confidence: None };
         assert!(gate_failures(&args(&["--min-prob", "0.7", "--expect", "CODE"]), std::slice::from_ref(&q), std::slice::from_ref(&good)).is_empty());
 
-        let score = Answer { kind: Kind::Score, value: json!(0), probability: Some(0.9), distribution: None, reason: None, reason_probability: None };
+        let score = Answer { kind: Kind::Score, value: json!(0), probability: Some(0.9), distribution: None, reason: None, reason_probability: None, provider_confidence: None };
         let sq = Question { id: DEFAULT_ID.into(), kind: Kind::Score, instructions: "?".into(), criteria: json!([]), reasons: None };
         let failures = gate_failures(&args(&["--expect-min", "1"]), std::slice::from_ref(&sq), std::slice::from_ref(&score));
         assert!(failures[0].contains("below --expect-min"));
     }
 
     #[test]
+    fn a_confident_no_passes_a_confidence_gate() {
+        // The fan-out that found this: asked whether a docs-only commit could break
+        // a caller, the model said no at p(true)=0.12 — decisive, and rejected by a
+        // gate on the raw probability. The gate is on the decision, not on "yes".
+        let q = Question { id: DEFAULT_ID.into(), kind: Kind::Bool, instructions: "?".into(), criteria: Value::Null, reasons: None };
+        let no = Answer {
+            kind: Kind::Bool,
+            value: json!(false),
+            probability: Some(0.12),
+            distribution: None,
+            reason: None,
+            reason_probability: None,
+            provider_confidence: None,
+        };
+        assert!(gate_failures(&args(&["--min-prob", "0.7"]), std::slice::from_ref(&q), std::slice::from_ref(&no)).is_empty(),
+                "a decisive no is confident, not unclear");
+
+        // ...while a genuinely split answer still fails.
+        let torn = Answer { probability: Some(0.55), ..no.clone() };
+        let failures = gate_failures(&args(&["--min-prob", "0.7"]), std::slice::from_ref(&q), std::slice::from_ref(&torn));
+        assert_eq!(failures.len(), 1);
+        assert!(failures[0].contains("confidence 0.550"), "{failures:?}");
+    }
+
+    #[test]
+    fn a_provider_confidence_is_used_for_choice_answers() {
+        // Jev reports a normalized margin for choice answers; it is a better gate
+        // than the winner's share, and it is what --min-prob compares against.
+        let a = read_answer(&Kind::Choice, &json!({"type": "choice", "choice": "warm",
+            "probabilities": {"warm": 0.6, "curt": 0.4}, "confidence": 0.33})).unwrap();
+        assert_eq!(a.probability, Some(0.6));
+        assert_eq!(a.confidence(), Some(0.33));
+    }
+
+    #[test]
     fn an_answer_without_a_probability_fails_a_probability_gate() {
         let q = Question { id: DEFAULT_ID.into(), kind: Kind::Choice, instructions: "?".into(), criteria: json!({}), reasons: None };
-        let a = Answer { kind: Kind::Choice, value: json!("code"), probability: None, distribution: None, reason: None, reason_probability: None };
+        let a = Answer { kind: Kind::Choice, value: json!("code"), probability: None, distribution: None, reason: None, reason_probability: None, provider_confidence: None };
         let failures = gate_failures(&args(&["--min-prob", "0.5"]), &[q], &[a]);
         assert_eq!(failures.len(), 1);
         assert!(failures[0].contains("no probability"));

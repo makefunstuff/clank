@@ -66,6 +66,30 @@ cat state.txt | clank-jev --checks checks.json --json | jq -r '.answers.team.val
 printf '%s' "$trace" | clank-jev --checks fixtures/checks-verification.json --min-prob 0.6   # exit 1 = a claim conflicts with the tool results
 clank-jev --provider kev --ask 'Which team?' --choice billing,shipping < ticket.txt           # local, no credentials
 
+# --- clank + clank-jev: the two stages compose in both orders
+
+# route, then generate: the decision picks the model
+route=$(printf '%s' "$task" | clank-jev -q --ask 'What kind of task is this?' --choice code,prose,math --min-prob 0.7) || route=unclear
+case "$route" in code) clank --model local-code -c src/context.rs -m "$task" ;; *) clank --model local-fast -m "$task" ;; esac
+
+# generate, then validate: clank writes, jev gates it (fixtures/checks-commit.json)
+msg=$(git show HEAD | clank -q --thinking off -m 'Write the commit message for this diff.')
+{ git show --stat HEAD; printf 'MESSAGE:\n%s\n' "$msg"; } | clank-jev --checks fixtures/checks-commit.json --min-prob 0.6
+
+# audit a trace after the fact: a --jsonl trace is evidence like any other
+clank --jsonl -m 'where is the cap defined? cite file:line' > trace.jsonl
+clank-jev --checks fixtures/checks-verification.json --min-prob 0.6 < trace.jsonl
+
+# fan out, act only on confident decisions (the loop is the shell's)
+while read -r s; do v=$(printf '%s' "$s" | clank-jev -q --ask 'Could this break a caller?' --boolean --min-prob 0.7) || { echo "unclear: $s"; continue; }; [ "$v" = true ] && echo "check: $s"; done < <(git log --format=%s -8)
+
+# escalate local -> hosted: 83 ms and $0 before touching the network
+ask() { printf '%s' "$1" | clank-jev -q --provider "$2" --ask 'Which team owns this?' --choice BILLING,TECHNICAL,ACCOUNT --min-prob "$3"; }
+v=$(ask "$state" kev 0.9) || v=$(ask "$state" openrouter 0.5)
+
+# break a tie between two answers, and let it say "both are wrong"
+printf 'A: %s\n\nB: %s\n' "$a" "$b" | clank-jev --ask 'Which names the exact file:line?' --choice A,B --min-prob 0.6
+
 # structured output: one request, grammar enforced by the server
 clank -m "…" --json-schema @schema.json | jq -er .
 clank --thinking off --json-schema '{"type":"object","properties":{"kind":{"type":"string","enum":["code","docs"]}},"required":["kind"]}' -m "Classify: code or docs."
@@ -93,7 +117,7 @@ The decision stage. Credentials come from the environment only.
 | `--boolean` | yes/no, printed as `true` or `false` |
 | `--score low,mid,high` | ordered levels, lowest first; prints the level number |
 | `--checks FILE` | a JSON file of questions: `{id: {type, instructions, criteria, reasons?}}` |
-| `--min-prob P` | exit 1 if any answer's probability is below this |
+| `--min-prob P` | exit 1 unless the decision is at least this confident — for a yes/no question a decisive *no* has p≈0 and confidence≈1, so the gate is on the decision, not on "yes" |
 | `--expect VALUE` | exit 1 unless the decision equals this (one question) |
 | `--expect-min N` | exit 1 unless an ordered decision is at least this level |
 | `--print-reason` | print the closed-choice reason instead of the value |
