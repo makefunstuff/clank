@@ -7,7 +7,7 @@
 | [research-harness-constraints.md](research-harness-constraints.md) | harness research: what the model already guarantees, probe results, latency measurements, clank vs pi |
 | [decision-readout.md](decision-readout.md) | research: reading option probabilities instead of generating answers (Jev/OpenJev pattern) |
 | [pi-review.md](pi-review.md) | review of `earendil-works/pi` as an implementation: what to steal, what not to copy |
-| [macbook-omlx-local-inference.md](macbook-omlx-local-inference.md) | clank with oMLX-served local models on a 16 GB M1 Pro: which model per job, the programming workflow as one-liners, and what does not work |
+| [macbook-omlx-local-inference.md](macbook-omlx-local-inference.md) | clank with oMLX-served local models on a 16 GB M1 Pro: which model per job, the programming workflow as one-liners, hallucination probes, and what does not work |
 
 The contract itself lives in [../PROTOCOL.md](../PROTOCOL.md); flags and
 one-liners in [../CHEATSHEET.md](../CHEATSHEET.md).

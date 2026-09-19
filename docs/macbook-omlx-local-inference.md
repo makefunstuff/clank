@@ -24,7 +24,9 @@ with `--model`.
 | `Bonsai-2-27B-CRACK-1.75bit-JANG` | — | load at all: the runtime rejects it (409, *402 parameters not in model*) |
 
 **2B for text, 9B for truth.** These are the jobs worth keeping, all run against
-this endpoint; where output is quoted it is what came back, verbatim.
+this endpoint; where output is quoted it is what came back, verbatim. The measured
+version of that table — who invents what, who uses the context, whose code runs —
+is at the end: *Hallucination, context, code*.
 
 ## Orienting in code you did not write
 
@@ -276,6 +278,80 @@ Model output is syntax-checked and never executed.
 | MiniCPM5-2B-MLX-8bit | stops at stage 1: `answer truncated at 8192 tokens` |
 
 Three models, three different gates firing, no false "passed".
+
+## Hallucination, context, code: which model to trust offline
+
+Three families of probe, run twice against this endpoint. Grading is mechanical:
+keyword rules for "did it deny what it cannot know", and an actual `bash` run plus
+a `rustc --test` compile for the code. `local/macbook/omlx-probes.sh` runs them,
+`omlx-probes-grade.py` grades them, raw answers land beside the verdicts.
+
+| probe | the ask | 2B | 9B | gemma |
+|---|---|---|---|---|
+| H1 a file that does not exist (observers on) | deny it | pass | pass | pass |
+| H1b the same file, seeing nothing | say so | pass | pass | pass |
+| H2 a flag that does not exist | deny it | pass | pass | pass |
+| H3 a port the piped note does not mention | decline | pass | pass | pass |
+| H4 that file again, with unrelated context piped | decline | pass | pass | pass |
+| H5 `--max-rounds`'s default, never supplied | say unknown | **"10"** | "None" | pass |
+| X1 retry window + error code, only in the piped spec | 7, E42 | pass | pass | pass |
+| X2 which function drops the local part | | pass | pass | pass |
+| C1 a one-liner over a csv | must run and match | pass | **header row** | pass |
+| C2 `pub fn count_words` in Rust | must compile and pass | pass | pass | pass (dropped `pub`) |
+
+**Nothing invented a file, a flag or a missing detail.** All three declined H1–H4,
+including the trap with unrelated context piped, and all three answered the context
+probes exactly — `7, E42` while the retired `3` and `E00` sat in the same file as
+distractors half a sentence later.
+
+The single fabrication was a **number nobody could check**. Asked for
+`--max-rounds`'s default with nothing supplied, the 2B answered `10`; the flag
+defaults to 12, and clank exited 0 because text came back. The 9B said `None`. If
+you take one rule from this page: a local model's confident number is the one thing
+its own honesty rules cannot catch.
+
+The 2B's denial is worth reading in full, because it is what good looks like — it
+refused the premise and then did the lookup:
+
+```
+The file `src/renderer.rs` does not exist in this repository. The `src/` directory
+currently contains only `client.rs`, `context.rs`, `main.rs`, and `tools.rs`.
+There is no `src/renderer.rs` file. Rendering logic is spread across
+`src/context.rs` and `src/main.rs`. Here are the relevant parts:
+- `src/context.rs:68` — `render_transcript` function …
+- `src/context.rs:239` — `Context::render` method.
+- `src/main.rs:304` — Calls `t.render()` on a context/tree for display.
+- `src/tools.rs:402` — Compact one-line rendering of tool args for breadcrumbs.
+```
+
+Every one of those four citations is correct, checked against the files.
+
+**Code generation is where the failures are — semantic, not syntactic.** All the
+code compiled and ran; the wrong answers ran fine and printed the wrong thing:
+
+- 9B, C1: `cut -d, -f2 data.csv | sort -u` → `dev ken mira owner`. It forgot the
+  header row and included `owner` as a value. (First run it wrote
+  `awk -F, 'NR>1{print $2}' data.csv | sort -u | uniq` and passed.)
+- 2B, C1 first run: `awk -F, '{print $2}' …` — the same header bug; second run it
+  wrote `NR>1` and passed.
+- gemma, C2: returned `fn count_words(…)` without the requested `pub`. Compiles
+  inside a crate, fails the signature as written in the prompt.
+
+So: never trust the answer, run the artifact. `bash -n` catches syntax, executing it
+catches the rest, and that check costs less than the model call did.
+
+**Offline verdict on this machine.** gemma-4-E4B-it is the most dependable of the
+three on these ten probes (6/6, 2/2, 2/2) and the least usable for anything
+structured — it cannot hold a `--json-schema` and answered the wrong question under
+`--tools`. Qwen3.5-9B is the one to use when output must parse or carry a citation;
+its code still needs running. MiniCPM5-2B is honest about absence and 4–12× faster,
+and its answers need checking: one guessed number, one self-contradiction and one
+header-row bug in two passes.
+
+**Read the cells as failure modes, not rates.** Each is n=1–2; the 2B contradicted
+itself on X2 (`The local part is kept, and it's dropped by the anonymize()
+function.`) in the first pass and answered cleanly in the second. The value of the
+probe is that it tells you *what* to check, not how often it breaks.
 
 ## What does not work
 
