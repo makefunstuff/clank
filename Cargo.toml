@@ -8,6 +8,12 @@ description = "Minimal unix-style local-inference harness: stdin/stdout CLI with
 name = "clank"
 path = "src/main.rs"
 
+# Decision stage: typed questions in, typed answers with probabilities out.
+# A separate binary so clank keeps its single-stage contract (see PROTOCOL.md).
+[[bin]]
+name = "clank-jev"
+path = "src/jev.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }

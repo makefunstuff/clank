@@ -248,6 +248,29 @@ jq's own exit code and stderr are the check, and the retry feeds the failure bac
 as context. No tool schema, no code execution inside clank: a proposal, a gate,
 and a loop the shell owns.
 
+## Why the decision stage is a separate binary
+
+`clank-jev` (in this crate, a second `[[bin]]`) asks typed questions about a state
+and returns typed answers with probabilities, for routing in scripts. It is
+deliberately *not* a clank flag, and this is the admission-rules argument rather
+than a packaging preference:
+
+| rule | why a `--use-jev` flag would break it | why the sibling binary does not |
+|---|---|---|
+| R1 composition first | it would add a mode to a tool whose value is being one stage | it is its own stage, composable with clank and without it |
+| R3 two channels | the same, unchanged — stdout data, stderr diagnostics, exit codes | unchanged: value on stdout, diagnostics on stderr, 0/1/2/3 |
+| R4 flags not memory | credentials would sit in clank's flag surface | credentials come from the environment only, never argv |
+| R6 output readable without clank | a Jev answer is only useful to a caller that knows the contract | the JSON is the contract, and one question prints a bare value |
+| no second wire protocol | clank speaks `/v1/chat/completions` and nothing else; a second provider inside it is a second source of truth | the second protocol lives in a binary whose entire job is that protocol |
+
+What the sibling inherits from clank rather than inventing: one request per
+invocation, no state on disk, a closed answer space, exit codes that never lie,
+and a failure (a skipped question, a missing probability) that fails the gate
+instead of passing by default. The reason pattern — a closed-choice reason decided
+in the same request as the value — is taken from `seanperkins/omp-jev-watchdog`,
+which uses Jev this way inside a harness; the vocabulary lives in the checks file,
+not in the binary.
+
 ## Admission rules
 
 Composition is the criterion. Before adding anything, answer these in order:

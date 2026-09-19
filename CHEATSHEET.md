@@ -7,6 +7,7 @@ fan-out and the looping.
 
 - **[docs/use-cases.md](docs/use-cases.md)** — real jobs, verified commands, prices and gates
 - **[docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md)** — running it against local models on a 16 GB Mac: which model per job, hallucination probes
+- **`clank-jev`** — the sibling binary for typed decisions: `--ask`/`--checks`, providers `typesafe` / `openrouter` / `kev`, gates in the exit code (see the README)
 - **[PROTOCOL.md](PROTOCOL.md)** — the contract: invariants, request sequence, event set, exit codes
 
 Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
@@ -55,6 +56,14 @@ for f in src/*.rs; do
   clank -c "$f" --thinking off -m "one line: what is this file responsible for?" </dev/null
   echo
 done
+
+# decisions for routing: pick one of your options, branch on it
+route=$(printf '%s' "$task" | clank-jev --ask 'What kind of task is this?' --choice code,prose,math --min-prob 0.7)
+case "$route" in code) clank --model local-code -m "$task" ;; *) clank --model local-fast -m "$task" ;; esac
+printf '%s' "$text" | clank-jev --ask 'Is this a refund request?' --boolean       # prints true|false
+cat state.txt | clank-jev --checks checks.json --json | jq -r '.answers.team.value'
+printf '%s' "$trace" | clank-jev --checks fixtures/checks-verification.json --min-prob 0.6   # exit 1 = a claim conflicts with the tool results
+clank-jev --provider kev --ask 'Which team?' --choice billing,shipping < ticket.txt           # local, no credentials
 
 # structured output: one request, grammar enforced by the server
 clank -m "…" --json-schema @schema.json | jq -er .

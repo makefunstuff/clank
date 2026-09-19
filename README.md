@@ -228,6 +228,70 @@ with the real tool.
 Tool errors go back to the model as data. A bad context file or a server error is a
 process failure.
 
+## Decisions for routing (`clank-jev`)
+
+A second binary in this crate, for one job: ask typed questions about a state and
+get answers a shell can branch on. `clank` writes prose; `clank-jev` picks one of
+*your* options and says how sure it is.
+
+```sh
+route=$(printf '%s' "$task" | clank-jev --ask 'What kind of task is this?' \
+          --choice code,prose,math --min-prob 0.7) || route=unclear
+case "$route" in
+  code) clank --model local-code -c src/context.rs -m "$task" ;;
+  *)    clank --model local-fast -m "$task" ;;
+esac
+```
+
+**Why a separate binary rather than a `clank` flag.** clank's contract is one
+prompt, one request, one answer, no second wire protocol (invariants 1–3). A
+decision stage also stands on its own — a git hook, a Makefile, a cron job — and a
+script that wants a decision should not have to carry a chat client to get one.
+
+**Providers.** Credentials come from the environment, never from argv:
+
+| `--provider` | endpoint | credential | default model |
+|---|---|---|---|
+| `auto` *(default)* | whichever credential is set | — | — |
+| `typesafe` | `api.typesafe.ai/v1/systemone` | `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) | `jev-latest` |
+| `openrouter` | `openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
+| `kev` | `127.0.0.1:8009/v1/systemone` (`--base-url` to move it) | none | `kev-latest` |
+
+The `kev` provider is a local System One server — [kev](https://github.com/jaredpalmer/kev)
+is a trained Jev-family model (LoRA + pointer readout head on Qwen, one prefill
+pass) that speaks the same request and response shapes, so it needs no
+credentials and no network.
+
+**A closed-choice reason rides along with the value**, decided in the same request
+— a judgment, not just a score. `fixtures/checks-verification.json` asks the two
+questions a shadow watchdog asks, each with its own reason set:
+
+```sh
+printf '%s\n' "USER: run the tests, do not touch the config" \
+  "TOOL cargo test -> FAILED" "ASSISTANT: all tests pass, config updated" \
+  | clank-jev --checks fixtures/checks-verification.json --json --min-prob 0.6
+```
+
+```json
+{"answers":{"verification":{"type":"noul","value":true,"probability":0.98,
+  "reason":"verification_contradiction","reason_probability":1.0}}, ...}
+```
+
+**Gates, and the exit codes a script branches on.** `--min-prob` fails a decision
+you asked not to trust; `--expect` and `--expect-min` fail one that is not the
+value you needed. A question the provider skipped, or an answer carrying no
+probability, fails the gate instead of passing by default.
+
+| code | meaning |
+|---|---|
+| `0` | decided, and every gate passed |
+| `1` | a gate failed — **the decision is still printed**, because the caller asked not to trust it, not to lose it |
+| `2` | usage: no question shape, an empty state, a malformed checks file |
+| `3` | provider, network or credentials |
+
+stdout is the bare value for one question (`code`, `true`, `2`), a JSON object for
+several; diagnostics and every gate failure go to stderr; `-q` silences them.
+
 ## Configuration
 
 Flags override `$CLANK_*` environment variables, which override built-in defaults:
