@@ -353,6 +353,128 @@ itself on X2 (`The local part is kept, and it's dropped by the anonymize()
 function.`) in the first pass and answered cleanly in the second. The value of the
 probe is that it tells you *what* to check, not how often it breaks.
 
+## What to take from Jev (to make this less hallucinatory)
+
+Jev's "can't hallucinate" is not a model property to copy. It is two design choices:
+**the answer space is closed** — the model may only pick from options you defined —
+and **the score comes from a readout you control**, not from prose it wrote. Both are
+transferable to clank on this Mac, with one measured caveat (§6 below).
+
+### 1. Give it candidates, not a blank page
+
+The shell finds the candidates; the model may only choose one. Measured on three
+questions whose answer is a real `file:line` in this repo
+(`local/macbook/grounding-probe.py`, 3 questions × 2 models × 2 styles):
+
+| model | prose ("cite file:line") | constrained (choose from a list) |
+|---|---|---|
+| Qwen3.5-9B-MLX-4bit | 3/3 correct, **207 s** for one of them | 3/3 correct, **2.4 s** |
+| MiniCPM5-2B-MLX-8bit | 1/3 correct, 2 refused to cite | 2/3 correct, **0.5 s** |
+
+The same answers, 10–80× faster, and the weak model's failure became *abstention
+instead of a wrong citation*. The recipe:
+
+```sh
+# the shell gathers the evidence and numbers it
+rg -n 'render_transcript' src/ | head -5 | nl -w1 -s'. ' > candidates.txt
+N=$(wc -l < candidates.txt | tr -d ' ')
+schema=$(jq -nc --argjson n "$N" '{type:"object",properties:{id:{type:"integer",
+   enum:([0]+[range(1;$n+1)])}},required:["id"]}')          # 0 = none of these
+clank --thinking off --json-schema "$schema" \
+  -m 'The context is numbered real matches from this repository. Which one defines render_transcript? JSON only: {"id": N}, or 0 if none does.' \
+  < candidates.txt | jq -er .id
+```
+
+### 2. Always offer "none of these", and honour it
+
+An answer space without an escape hatch forces a guess — that is where invention
+starts. Measured: asked for a flag's default value with nothing to check it
+against, the 2B answered `10` (it is 12) and exited 0; asked about a file that does
+not exist, all three models refused, 12 traps out of 12 (`omlx-probes-*.json`).
+Abstention has to be a legitimate answer, and the exit code has to say whether that
+counts as failure *for that call*.
+
+### 3. Verify the claim, not the confidence
+
+Jev's confidence is calibrated over many decisions; a local model's is not, and
+Needle's `0.9989` came with a wrong answer. What works here is mechanical: the shell
+checks the artifact before anything downstream trusts it.
+
+Two levels, because they catch different things. Existence is automatic — a file
+that is not there is a fabrication. The symbol check is per-claim: write it for the
+thing you actually asked about.
+
+```sh
+SYMBOL=TRANSCRIPT_OUTPUT_CAP      # what the question was about
+ans=$(clank --thinking off -m 'which file defines the cap? cite file:line' < README.md)
+echo "$ans" | rg -o '[[:alnum:]_./-]+\.[a-z]+:[0-9]+' | while read -r c; do
+  f=${c%:*}; l=${c#*:}
+  [ -f "$f" ] || { echo "INVENTED FILE: $c"; continue; }
+  [ "$l" -le "$(wc -l < "$f")" ] || { echo "INVENTED LINE: $c"; continue; }
+  sed -n "${l}p" "$f" | rg -q "$SYMBOL" \
+    && echo "verified: $c" \
+    || echo "unchecked: $c (the line exists, $SYMBOL is not on it)"
+done
+```
+
+Run on a real answer from the 9B, this matters twice over: that answer cited
+`src/context.rs:136` (correct) **and `docs/provenance.md`, a file that does not
+exist** — and the README itself quotes the old invented `src/renderer.ts:14`, which
+the model then repeated back as if it were evidence. A `.rs`-only pattern misses the
+first; a symbol check written for the wrong symbol misses the second; both are one
+shell pipeline away from being a gate.
+
+Same shape as `jq -er` for JSON and `bash -n` for proposed commands: the gate is
+what makes the answer usable, not the model's tone.
+
+### 4. One question per call, combine in code
+
+Jev's own rule — weight the factors in your code, not in a prompt. On this box it
+is also the fast path: `--each` over three commit subjects is one call (5.3 s on the
+9B), and a batched multi-field call beats a paragraph that has to be re-parsed.
+
+### 5. Test that the stage reads its context at all
+
+The cheapest anti-hallucination test there is, and it needs no model change: run the
+stage again with the context scrambled. If the answer does not change, the stage is
+answering from priors.
+
+```sh
+a=$(pipeline < real.txt);  b=$(pipeline < shuffled.txt)
+[ "$a" = "$b" ] && echo "FAIL: the answer does not depend on the evidence"
+```
+
+Measured with exactly that control on 18 typed decisions: hosted Jev **94% → 11%**,
+local jevmlx **67% → 28%**, Cactus/Needle **33% → 44%** (i.e. it fails the control
+and is answering from priors — 35 MB of tool-routing weights, not a decision engine).
+
+### 6. Where the probability readout actually is on this Mac
+
+Jev's second half — *read the distribution* — is not available through clank here:
+
+- **oMLX returns no logprobs at all** (`choices[0].logprobs` is absent; verified on
+  two models). So a slot readout against oMLX is impossible today; the only
+  probabilities it can give are ones the model *writes*, which is the thing Jev
+  exists to avoid.
+- **llama.cpp does return them**, and one is already running on this machine
+  (`:8012`, GGUF): a one-token request came back with `top_logprobs` including the
+  option tokens (`A` -1.63, `Yes` -0.95). So a real readout is one sidecar away —
+  but clank does not surface logprobs, and pointing it at a second runtime is the
+  second-source-of-truth problem `PROTOCOL.md` rules out. If we want it, it is a
+  `--decide` mode with its own wire tests (the branch plan in
+  [decision-readout.md](decision-readout.md)), not a flag bolted onto `--json-schema`.
+- **A local Jev clone exists and is cheap**: `jevmlx` (MLX, one batched pass,
+  per-field probability) ran 18 typed decisions at 67% with a 28% control, 0.6 s
+  each, offline. It is a *sidecar* to clank, not a replacement for it.
+
+### 7. What does not transfer
+
+A prompted JSON schema is not a grammar. On this oMLX build only
+`Qwen3.5-9B-MLX-4bit` enforced `--json-schema`; gemma returned a fenced block and
+the 2B answered in prose. So the closed answer space holds *only where it has been
+measured*, and on every other model the mechanical gate in §3 is doing the work.
+Constrain the question *and* check the answer — neither half is sufficient alone.
+
 ## What does not work
 
 - **`--json-schema` on the 2B and gemma.** Fenced or prose answers, `exit 1`. Use

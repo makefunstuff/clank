@@ -20,7 +20,7 @@ reason and `exit 1`.
 - [CHEATSHEET.md](CHEATSHEET.md) — flags, one-liners, integrations
 - [docs/use-cases.md](docs/use-cases.md) — the job families, each with its gate and its price
 - [PROTOCOL.md](PROTOCOL.md) — the contract: invariants, request sequence, context doctrine, event set, exit codes
-- [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) — it running against local models on a 16 GB Mac: which model per job, the programming workflow as one-liners, hallucination probes, what does not work
+- [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) — it running against local models on a 16 GB Mac: which model per job, the programming workflow as one-liners, hallucination probes, what to take from Jev to make it less hallucinatory, what does not work
 
 ## Install
 
