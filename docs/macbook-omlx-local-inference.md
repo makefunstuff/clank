@@ -369,7 +369,7 @@ questions whose answer is a real `file:line` in this repo
 | model | prose ("cite file:line") | constrained (choose from a list) |
 |---|---|---|
 | Qwen3.5-9B-MLX-4bit | 3/3 correct, **207 s** for one of them | 3/3 correct, **2.4 s** |
-| MiniCPM5-2B-MLX-8bit | 1/3 correct, 2 refused to cite | 2/3 correct, **0.5 s** |
+| MiniCPM5-2B-MLX-8bit | 1/3 correct, 2 refused to cite | 2/3 correct, 1 abstained, **0.5 s** |
 
 The same answers, 10–80× faster, and the weak model's failure became *abstention
 instead of a wrong citation*. The recipe:
