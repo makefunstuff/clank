@@ -271,8 +271,67 @@ endpoint and the model, warms the model, records the tape against a live server,
 and fails if the GIF it produced is missing or empty. Re-recording is one
 command; nothing in the GIF is drawn or replayed from a canned transcript.
 
+## In a container
+
+One binary, a base image, and whatever you mount. `Dockerfile` builds it; the
+image is 32 MB and holds nothing else.
+
+```sh
+docker build -t clank .
+
+git log -1 --stat | docker run --rm -i --network=host \
+  -v "$PWD":/w:ro -w /w \
+  -e CLANK_BASE_URL=http://127.0.0.1:4000/v1 \
+  -e CLANK_MODEL=deepseek/deepseek-v4-flash \
+  clank --thinking off -m "The context is git log --stat. One line: what changed and the risk it carries."
+```
+
+*Verified* 2026-09-19 against the DeepSeek gateway, the repo mounted read-only:
+
+> `docs/use-cases.md` gained §8 (87 lines) and `PROTOCOL.md` one line,
+> documenting (not installing) a timer-driven use case; the risk is that the
+> units are unverified in-place — only hand-tested once, where a truncated run
+> left a `run` event with no `assistant`.
+
+With nothing piped, the read-only observers look around inside the container, and
+every lookup still lands on stderr:
+
+```
+> search context_lines=0 glob=* ignore_case=true path=. pattern=exit.?code|EXIT_|exit\(2\)|return 2
+< search ok (3019 B)
+> list_dir path=.
+< list_dir ok (326 B)
+```
+
+*Verified:* the same question answered `` `src/main.rs:10` defines them — "exit
+codes: 0 ok, 1 failure …, 2 usage" ``.
+
+Four things that are not optional:
+
+- **`-i`** is what lets the pipe reach it. No `-i`, no context.
+- **`--network=host`** is what makes a model on localhost reachable — and it is
+  also the limit of the sandbox. The container bounds what the model can *write*,
+  not what it can *reach*; PROTOCOL.md says the same thing about `--tools`.
+- **`:ro`** is not decoration. Mounted read-only, `touch /w/pwned` returns
+  `Read-only file system`. The capability boundary stops being a promise clank
+  keeps and becomes one the kernel keeps.
+- **Not alpine.** clank is glibc-dynamic — `exec /usr/local/bin/clank: no such
+  file or directory` under musl. `ubuntu:24.04` and `debian:stable-slim` both work.
+
+What this covers is the reading and the proposing: the search, the lookups, the
+diff, the answer — with no daemon, no session store, no memory, and no tool
+schemas in the context. What it does not cover is the write. clank proposes and
+something else applies, which is the containment rather than a gap in it.
+
 ## Verified
 
+* Through a remote gateway (`http://127.0.0.1:4000/v1`, `deepseek/deepseek-v4-flash`,
+  2026-09-19) a top-level `json_schema` was **not** grammar-enforced: asked for
+  `{"script": …}` the model returned a fenced block whose key was `command`, and
+  clank exited 1 with *final output is not valid JSON; --json-schema requested*.
+  The contract held — a violation is a failure, not a result — but the grammar
+  guarantee is the endpoint's to keep, and this one did not. Assume `--json-schema`
+  is enforced only where it has been measured.
 * Models: qwen 3.8 27b (Qwen3.8-27B GSQ-RCO IQ3_XXS) on
   `http://127.0.0.1:40583/v1` and qwen 3.6 35B-A3B (Qwen3.6-35B-A3B-UD-Q5_K_S)
   on `http://127.0.0.1:37313/v1` — both via the OpenAI-compatible endpoint,
