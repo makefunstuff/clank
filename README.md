@@ -260,7 +260,19 @@ script that wants a decision should not have to carry a chat client to get one.
 The `kev` provider is a local System One server — [kev](https://github.com/jaredpalmer/kev)
 is a trained Jev-family model (LoRA + pointer readout head on Qwen, one prefill
 pass) that speaks the same request and response shapes, so it needs no
-credentials and no network.
+credentials and no network:
+
+```sh
+git clone https://github.com/jaredpalmer/kev && cd kev && uv sync --extra serve
+KEV_DTYPE=fp32 uv run --extra serve python -m kev.serve --run jaredpalmer/kev-0.6b --port 8009
+```
+
+Measured on the same 18 typed decisions as the table in
+[docs/decision-readout.md](docs/decision-readout.md): `kev-0.6b` **16/18 = 89%**,
+83 ms median, control 17% (hosted Jev: 94%, 591 ms, $0.000015). It passes the
+shuffled-context control, so the accuracy comes from the state. `kev-4b` is the
+checkpoint they recommend and it does not fit here — it serves bf16 only, ~8.5 GB
+against 16 GB shared with a resident oMLX model.
 
 **A closed-choice reason rides along with the value**, decided in the same request
 — a judgment, not just a score. `fixtures/checks-verification.json` asks the two
