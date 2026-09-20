@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "code-no-speculative-abstraction",
+      "title": "No abstraction without a second user",
+      "text": "A trait, a generic parameter or a trait object earns its indirection from a second implementation or a second caller. With one of each, the concrete type reads shorter and says more. The taste rule is the repository's: delete weightless code, refuse needless abstractions, prefer boring.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs", "tests/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "\\btrait [A-Z]\\w*|\\bimpl<[A-Z]|Box<dyn |&dyn [A-Z]|-> dyn |dyn [A-Z]\\w*" },
+      "judgement": {
+        "question": "Is this an abstraction — a trait, a generic parameter or a trait object — introduced for a single implementation or a single caller, where the concrete type would do?",
+        "criteria": {
+          "true": "the code around it shows one implementation or one call site, and the indirection buys nothing: no test doubles, no second runtime, no caller-supplied behaviour",
+          "false": "the closed set is the point (a small enum of outcomes), the caller supplies the implementation (a callback or a closure parameter), or two or more real implementations exist"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

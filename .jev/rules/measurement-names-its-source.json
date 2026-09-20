@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "measurement-names-its-source",
+      "title": "A measurement names what produced it",
+      "text": "This repository's docs are read as evidence, so every number carries its date and the model, endpoint or command that produced it — `measured 2026-09-19 on oMLX`, `verified with cargo test`. A number with no source cannot be re-checked, and reads like one that was invented.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "(?i)\\b(measured|verified|observed|passed|proven|faster|slower)\\b" },
+      "judgement": {
+        "question": "Does this line state a result — a number, a verdict, a comparison — without naming the model, endpoint, date or command that produced it?",
+        "criteria": {
+          "true": "it asserts a result while naming no model, endpoint, date, command or harness anywhere on the line",
+          "false": "the source is named on the line, or the line claims nothing (a heading, a rule of the contract, a quotation of someone else's words)"
+        },
+        "min_probability": 0.7
+      },
+      "verb_hint": "docs"
+    }
+  ]
+}

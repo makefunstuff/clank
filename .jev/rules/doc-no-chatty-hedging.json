@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "doc-no-chatty-hedging",
+      "title": "No filler or coaching in a sentence",
+      "text": "Filler and reader-coaching — 'it is worth noting', 'in order to', 'basically', 'be sure to' — spend words on nothing the document has to say. The fact is the sentence; the phrase around it is the slop.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "(?i)\\b(it'?s worth (noting|mentioning)|needless to say|note that|keep in mind|as you can see|in order to|basically|essentially|at the end of the day|it is important to|be sure to|as (mentioned|noted) (above|earlier))\\b" },
+      "judgement": {
+        "question": "Is this filler or coaching — a phrase that could be deleted without losing a fact, a rule or a step — rather than a sentence the document needs?",
+        "criteria": {
+          "true": "the phrase adds no information: deleting it leaves the sentence's content unchanged",
+          "false": "the phrase carries information (a condition, a reason, a source, a sequence), or it is inside a quotation"
+        },
+        "min_probability": 0.75
+      },
+      "verb_hint": "docs"
+    }
+  ]
+}

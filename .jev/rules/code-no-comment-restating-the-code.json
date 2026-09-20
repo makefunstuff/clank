@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "code-no-comment-restating-the-code",
+      "title": "A comment says why, not what",
+      "text": "A comment that paraphrases the line below it ages with the line and adds a second place to be wrong. What earns a comment is a reason, a constraint, a source, or an invariant the code cannot state itself.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "^\\s*//" },
+      "judgement": {
+        "question": "Does this comment restate what the code below it does, rather than saying why, what constraint it is under, or where the claim comes from?",
+        "criteria": {
+          "true": "the comment paraphrases the code, so deleting it would lose nothing a reader could not see",
+          "false": "it states a reason, a source, a constraint, an invariant, or something the code deliberately does not express"
+        },
+        "min_probability": 0.75
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

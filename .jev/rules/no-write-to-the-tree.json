@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "no-write-to-the-tree",
+      "title": "clank observes; it does not write",
+      "text": "PROTOCOL invariant 4: the capability boundary is observation — no writes, no shell, no network beyond the model endpoint. clank proposes, and the shell or the human applies. The only file write the contract allows is the request dump the caller opts into with `CLANK_DEBUG`.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "fs::write|File::create|OpenOptions|create_dir|remove_file|remove_dir|set_permissions|fs::rename|File::append" },
+      "judgement": {
+        "question": "Does this create, write, move or delete a path the caller did not ask for — anything other than the opt-in `CLANK_DEBUG` dump — where the stage's whole contract is that it observes and proposes?",
+        "criteria": {
+          "true": "it writes, creates, moves or deletes a path that is neither the `CLANK_DEBUG` dump nor a test fixture",
+          "false": "it is the `CLANK_DEBUG` request dump, a test fixture, or a read whose name merely looks like a write"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "harden"
+    }
+  ]
+}

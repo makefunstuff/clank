@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "stdout-is-data",
+      "title": "stdout carries data, never narration",
+      "text": "PROTOCOL invariant 6: stdout is the answer, the framed `--each` answers, the `--jsonl` events, or `--list-tools`/`--help` output, and nothing else. Breadcrumbs and diagnostics go to stderr, because the consumer pipes stdout into `jq`.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "println!|print!" },
+      "judgement": {
+        "question": "Does this write to stdout something that is not data — a breadcrumb, a progress line, or a diagnostic that a consumer piping stdout into `jq` would receive as part of the answer?",
+        "criteria": {
+          "true": "it is a diagnostic, breadcrumb, warning or narration on stdout",
+          "false": "it is the answer, a framed item header or answer, a `--jsonl` event, or `--list-tools`/`--help` output"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "fix"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "doc-no-decorative-glyph",
+      "title": "No decorative glyphs in prose",
+      "text": "Emoji and dingbats in a document that is read as evidence are decoration: the sentence reads the same without them. Box-drawing characters a format defines, and arrows between measurements, are not decoration.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "[\\x{2600}-\\x{27BF}\\x{2B00}-\\x{2BFF}\\x{2705}\\x{274C}\\x{1F000}-\\x{1FAFF}\\x{FE0F}]" },
+      "judgement": {
+        "question": "Is this glyph decoration in the document's own prose, rather than part of a quoted tool output, a diagram, or a symbol the text defines?",
+        "criteria": {
+          "true": "it decorates a heading, a list item or a sentence that reads the same without it",
+          "false": "it is inside quoted command output or a diagram, or the surrounding text defines it as a symbol with a meaning"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "docs"
+    }
+  ]
+}

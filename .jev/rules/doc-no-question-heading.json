@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "doc-no-question-heading",
+      "title": "A heading names its subject",
+      "text": "A question as a heading ('What does not work?') makes the reader ask it too. The subject named directly — 'What does not work' — is the same heading in fewer words and one less gesture.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "^#{1,6} .*\\?\\s*$" },
+      "judgement": {
+        "question": "Is this heading phrased as a question, where naming the subject would say the same thing in fewer words?",
+        "criteria": {
+          "true": "the heading asks a question that its own section then answers",
+          "false": "the question is the document's own title, a quotation, or a heading whose subject genuinely is the open question"
+        },
+        "min_probability": 0.7
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "system-prompt-is-not-a-style-guide",
+      "title": "The system prompt states rules, not style",
+      "text": "PROTOCOL: the built-in system prompt states what the model may assume and what it may not do, plus how to answer when the context lacks the answer. It does not shape tone, length or formatting — that is harness influence the reader can no longer attribute, which is why task-specific instructions belong in `--system @file`.",
+      "severity": "warning",
+      "applies_to": ["src/tools.rs"],
+      "inspection": { "kind": "regex", "pattern": "(?i)be (concise|brief|short|terse)|keep (it|your (answer|response)|the answer) (short|brief|concise)|no (markdown|formatting|preamble)|do not (use|add) (markdown|emojis|formatting)|avoid (markdown|preamble|filler)" },
+      "judgement": {
+        "question": "Does this line constrain tone, length or formatting — a brevity, markdown or style directive — rather than stating what the model may assume, what it may not do, or how to answer when the context does not contain the answer?",
+        "criteria": {
+          "true": "it is a tone, length or formatting directive that belongs in `--system @file` instead",
+          "false": "it states what the model may assume, may not do, or how to answer when the answer is not in the context"
+        },
+        "min_probability": 0.7
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

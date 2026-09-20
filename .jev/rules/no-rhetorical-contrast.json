@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "no-rhetorical-contrast",
+      "title": "State the claim, do not frame it",
+      "text": "A claim stated as a contrast — 'not just a score, but a judgment', 'a stage, not an assistant' — spends a line on framing and adds nothing the plain statement does not have. The contrast is the reader's to draw.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "(?i)\\bnot just\\b|\\bisn'?t just\\b|\\bnot merely\\b|\\bmore than just\\b|\\bnot only\\b.{0,60}\\bbut\\b" },
+      "judgement": {
+        "question": "Is this sentence framing its claim as a contrast rather than stating it — would the same sentence carry the same information without the 'not just X' construction?",
+        "criteria": {
+          "true": "the contrast is rhetorical: the sentence says everything it has to say without it, and the framing is there for emphasis",
+          "false": "the contrast carries information — two things that differ in a way the document has measured or defined — or it is inside a quotation"
+        },
+        "min_probability": 0.7
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

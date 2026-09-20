@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "no-async-in-clank",
+      "title": "clank is synchronous by construction",
+      "text": "PROTOCOL invariants 1 and 5: one invocation is one request in one process, and there is no concurrency inside it; parallelism is `xargs -P`, above clank. An async runtime is a second scheduler inside a stage that promised to be one step.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "async fn|async move|\\.await|tokio::|async_std|futures::executor" },
+      "judgement": {
+        "question": "Does this line make clank's own code asynchronous — an `async` item, an `.await`, or a call into an async runtime — rather than a doc comment or a string that only names async?",
+        "criteria": {
+          "true": "the line itself is async by construction: an `async` item, an `.await` expression, or a call into an async runtime",
+          "false": "it is inside a doc comment, a string literal, or a test that only mentions the word"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "fix"
+    }
+  ]
+}

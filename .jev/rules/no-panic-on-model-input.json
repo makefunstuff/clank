@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "no-panic-on-model-input",
+      "title": "No panic on input the model produced",
+      "text": "The exit-code contract has one failure code, `1`, with the reason on stderr. A panic is `101`: a code the contract does not define and a failure a script cannot branch on. A missing JSON field, a malformed stream chunk or an absent choice is a normal failure of a model, not an invariant violation.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "\\.unwrap\\(\\)|\\.expect\\(" },
+      "judgement": {
+        "question": "Is this unwrap or expect reachable on input the model or the server produced — a missing JSON field, a malformed stream chunk, an absent choice — so that a failure panics instead of returning the contract's exit 1 with a reason?",
+        "criteria": {
+          "true": "the value can be absent or malformed in a response, so a bad answer panics the process",
+          "false": "it is in test code, or behind an invariant that makes the value infallible at this point (a value just checked, a constant, a literal)"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "harden"
+    }
+  ]
+}

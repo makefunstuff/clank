@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "no-unmeasured-superlative",
+      "title": "No superlative standing in for a number",
+      "text": "Adjectives with no measurement behind them read as marketing, and this repository's docs are read as evidence. If there is a number, use the number; if there is not, say what was observed.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "(?i)\\b(genuinely|seamless(ly)?|effortless(ly)?|blazing|revolutionary|game-?changing|industry-leading|state-of-the-art|best-in-class|world-class|cutting-edge|hugely|massively|remarkably|incredibly)\\b" },
+      "judgement": {
+        "question": "Is this an unmeasured claim of quality — an adjective doing the work that a number, a command or an observation should do?",
+        "criteria": {
+          "true": "the word asserts quality, speed or ease with nothing on the line measuring it",
+          "false": "the line backs the claim with a number, a command or a named observation, or the word is inside a quotation attributed to a source"
+        },
+        "min_probability": 0.75
+      },
+      "verb_hint": "docs"
+    }
+  ]
+}

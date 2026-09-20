@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "code-no-silent-fallback",
+      "title": "A failure does not become a value",
+      "text": "R5, never lie: a fallback indistinguishable from a real result reports a success the code cannot back. `unwrap_or_default()` on an answer path prints an empty answer and exits 0, and nothing downstream can tell that anything failed. A field the protocol may legitimately omit, replaced by a value the code treats as equivalent, is not that.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "unwrap_or\\(|unwrap_or_default\\(|unwrap_or_else\\(" },
+      "judgement": {
+        "question": "Does this turn a failure into a value the caller cannot tell apart from success, where the contract gives failures their own channel (exit 1, a line on stderr)?",
+        "criteria": {
+          "true": "the fallback substitutes an empty, zero or default value for something the program needs — an answer, a schema, a serialised payload — and nothing downstream can tell that the real value was never produced",
+          "false": "the absent field is one the protocol may legitimately omit and the substitute is what the rest of the code treats as the same thing (an identifier synthesised when the stream omits one), or the substituted value is handed to a path that reports the failure as data the caller or the model can see"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "harden"
+    }
+  ]
+}

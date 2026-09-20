@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "code-no-wrapper-for-one-caller",
+      "title": "A function that adds only a name",
+      "text": "A function earns its name by being called more than once, by checking an invariant, or by narrowing a type. A one-expression body with one caller is indirection the reader pays for.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "^\\s*(pub )?(async )?fn [a-z_]\\w*" },
+      "judgement": {
+        "question": "Is this function a wrapper that adds a name but no meaning — one caller, and a body that only forwards to or renames something else?",
+        "criteria": {
+          "true": "there is one call site and the body forwards, renames or converts, so the caller could read the same thing directly",
+          "false": "it has several callers, or its body is where an invariant is checked, a failure classified, a type narrowed, or a boundary enforced"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

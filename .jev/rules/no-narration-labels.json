@@ -1,0 +1,29 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "no-narration-labels",
+      "title": "No narration labels over results",
+      "text": "A result in this repository is a table row or a plain sentence. An italic or bold label (`*Verified:*`, `*Cost:*`, `*Gate:*`) is narration: the fact reads the same without it, and the label implies a structure the document does not have.",
+      "severity": "warning",
+      "applies_to": [
+        "*.md",
+        "docs/**/*.md",
+        ".jev/*.md"
+      ],
+      "inspection": {
+        "kind": "regex",
+        "pattern": "(?i)^\\s*\\*{1,2}(verified|observed|cost|gate|note|measured|why)(:\\*{1,2}|\\*{1,2}\\s*:)"
+      },
+      "judgement": {
+        "question": "Is this line a narration label introducing a result, rather than the result itself stated as a sentence or a table row?",
+        "criteria": {
+          "true": "it labels the text that follows instead of stating it, and the document would mean the same without the label",
+          "false": "it is a defined term, a heading that carries content, or part of a quotation"
+        },
+        "min_probability": 0.7
+      },
+      "verb_hint": "docs"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "doc-no-second-person-advice",
+      "title": "Advice to the reader, not a fact",
+      "text": "A document states what is true. 'You should', 'just run', 'feel free to' address a reader who is about to find the same thing in the step that follows, or in the contract above.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "(?i)\\b(you (should|need to|have to|must|will want to)|if you (want|need|prefer|like)|just (run|use|add|set|call|try)|simply (run|use|add|set)|feel free to|you'?ll want)\\b" },
+      "judgement": {
+        "question": "Is this advice addressed to the reader — what they should do or will want — rather than a statement about the subject (what the caller piped, what the script does, what the contract requires)?",
+        "criteria": {
+          "true": "it instructs or reassures the reader, and the step next to it, or the contract above it, already says the same thing",
+          "false": "the second person is the contract's own subject ('the evidence you piped', 'options you defined') or part of a command's quoted output"
+        },
+        "min_probability": 0.75
+      },
+      "verb_hint": "docs"
+    }
+  ]
+}

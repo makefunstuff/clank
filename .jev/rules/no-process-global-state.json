@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "no-process-global-state",
+      "title": "No state that outlives the invocation",
+      "text": "PROTOCOL invariant 1: nothing persists. No session files, no daemon, no cache clank owns, and no process-global mutable state, which is a cache the pipeline cannot see or clear. Constants and `&'static str` are not state.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "static mut|lazy_static!|OnceLock|OnceCell|thread_local!|Mutex<|RwLock<|AtomicUsize|AtomicBool" },
+      "judgement": {
+        "question": "Is this mutable state shared across the process — a cache, registry or flag that outlives one invocation's work — rather than a constant, an immutable `&'static` reference, or a value local to this call?",
+        "criteria": {
+          "true": "it is mutable state shared across the process, so a later invocation could observe what an earlier one left behind",
+          "false": "it is a constant, an immutable `&'static` value, or something that lives only for the current invocation"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

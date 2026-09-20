@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "doc-no-placeholder",
+      "title": "No placeholder shipped as finished",
+      "text": "A document that presents itself as finished does not carry TODO, TBD, WIP or 'coming soon'. Work that is not done is either absent or named as absent — 'no --root flag exists' is a fact; 'to be added' is a promise.",
+      "severity": "warning",
+      "applies_to": ["*.md", "docs/**/*.md", ".jev/*.md"],
+      "inspection": { "kind": "regex", "pattern": "(?i)\\b(TODO|FIXME|TBD|XXX|WIP|coming soon|to be (written|added|determined|decided)|placeholder text|fill (this|me) in)\\b" },
+      "judgement": {
+        "question": "Is this a placeholder for work that was not done, in a document that reads as finished?",
+        "criteria": {
+          "true": "it marks something as unfinished, undecided or to come",
+          "false": "it is inside a command or a quoted pattern that searches for such markers, a fixture or template where the placeholder is the point, or a statement of a feature's absence as a fact"
+        },
+        "min_probability": 0.8
+      },
+      "verb_hint": "docs"
+    }
+  ]
+}

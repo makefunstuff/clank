@@ -1,0 +1,27 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "code-no-second-home-for-a-value",
+      "title": "A value has one home",
+      "text": "A default stated twice can disagree with itself. The server owns its own defaults, the caller owns the flags, and a constant that repeats either is a second source of truth the pipeline cannot see. What makes it visible in a review is the second statement being on screen.",
+      "severity": "warning",
+      "applies_to": [
+        "src/**/*.rs"
+      ],
+      "inspection": {
+        "kind": "regex",
+        "pattern": "^\\s*(pub )?const [A-Z_0-9]+|^\\s*static [A-Z_0-9]+"
+      },
+      "judgement": {
+        "question": "Does the excerpt show this value defined more than once — another constant carrying the same value, a literal repeated for the same purpose — so that only one of them can be changed in step?",
+        "criteria": {
+          "true": "the same value is defined twice within view (two constants, or a constant and a literal used for the same purpose), with nothing keeping the two in step",
+          "false": "the value is defined once in view, or the repetition is a different quantity that happens to share the number"
+        },
+        "min_probability": 0.75
+      },
+      "verb_hint": "rewrite"
+    }
+  ]
+}

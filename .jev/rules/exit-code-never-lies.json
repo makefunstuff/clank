@@ -1,0 +1,22 @@
+{
+  "schema": "jev.rules/1",
+  "rules": [
+    {
+      "id": "exit-code-never-lies",
+      "title": "An exit code that never lies",
+      "text": "PROTOCOL's exit-code table: `0` means every prompt was answered and every item succeeded, `1` means failure, `2` means usage, and for `clank-jev` `3` means the decision could not be asked for. Truncation and emptiness are failures, not results: a stage that reports a success it cannot back is worse than one that fails.",
+      "severity": "warning",
+      "applies_to": ["src/**/*.rs"],
+      "inspection": { "kind": "regex", "pattern": "process::exit|return Ok\\([0-9]\\)|exit\\([0-9]\\)" },
+      "judgement": {
+        "question": "Does this exit code contradict the contract — success on a path where the answer was truncated, empty or an item failed, or a failure class the table does not give for this outcome?",
+        "criteria": {
+          "true": "the code returned here contradicts the table: success after something failed, or a failure reported as a different class than the one it is",
+          "false": "the code matches the table's meaning for this outcome, including the central `process::exit(run(args))` that returns the run's own verdict"
+        },
+        "min_probability": 0.75
+      },
+      "verb_hint": "fix"
+    }
+  ]
+}
