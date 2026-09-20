@@ -6,13 +6,18 @@
       "title": "No second request the caller did not ask for",
       "text": "PROTOCOL's request sequence is a contract: one invocation is one request, `--tools` adds rounds the model asks for, and a transport failure is exit 1. A silent retry, a reconnect or a fallback model spends the caller's budget on a decision the caller did not make.",
       "severity": "warning",
-      "applies_to": ["src/**/*.rs"],
-      "inspection": { "kind": "regex", "pattern": "(?i)\\bretry\\b|\\breconnect\\b|\\bbackoff\\b|max_attempts|for attempt" },
+      "applies_to": [
+        "src/**/*.rs"
+      ],
+      "inspection": {
+        "kind": "regex",
+        "pattern": "(?i)\\bretry\\b|\\breconnect\\b|\\bbackoff\\b|max_attempts|for attempt"
+      },
       "judgement": {
         "question": "Does this send a second request the caller did not ask for — a retry, a reconnect, a backoff loop, or a fallback to another model — where the contract says a transport failure is exit 1?",
         "criteria": {
-          "true": "it resends or reroutes a request on its own, so the number of requests a stage makes is not what the contract states",
-          "false": "it is a doc comment, a CLI flag or field the caller sets explicitly, or a loop that reads one response (the SSE stream) rather than sending a new request"
+          "true": "a request goes out again — a probe before the real one, a retry after a failure, a delay-and-resend, a reconnect — so the stage makes more requests than the contract states",
+          "false": "no extra request is sent: the loop reads one response (the SSE stream), iterates over items to send exactly one request each, or is a flag the caller sets"
         },
         "min_probability": 0.75
       },

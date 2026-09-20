@@ -76,6 +76,31 @@ written.
 - Editing a rule does not repaint findings already on screen: save the buffer,
   or `:Jev inspect --force` / `jev.recompute`.
 
+### What the pass does not see
+
+Four limits, all measured on 2026-09-20 by writing plausible violations into
+this repository and watching what the pass made of them:
+
+- **A rule asks about at most `max_candidates_per_rule` matches per document, in
+  line order** (a client setting, 8 by default). A tenth `println!` in a long
+  file is never put to the model, however wrong it is. Narrowing the pattern is
+  the fix — see the next point for why raising the ceiling is not.
+- **One decision call per rule per document, not per candidate.** A larger
+  candidate set costs no more money, and does cost judgement: raising the
+  ceiling from 8 to 32 silenced a rule that had been firing at 8 on the same
+  document. Keep the batch small.
+- **The same shape is caught in a small file and declined in a large one.** A
+  progress `println!` and a `!value.is_empty()` assertion each produce a finding
+  in a 20-line file and neither does in `src/main.rs` or `tests/wire.rs`. A
+  clean large file is a weaker signal than a clean small one, so read silence as
+  "nothing stood out", not as proof.
+- **An ambient pass needs a trigger the client has to send.** The pass runs on
+  save and on idle *after a change*, so a client that only opens files and pulls
+  diagnostics never starts one: with a blatant `pub async fn` open for six
+  seconds, the decision count did not move. Findings then appear only when a
+  pass is asked for (`:Jev inspect`, `jev.inspect`), which is how every number
+  in this section was produced.
+
 ## Adding a rule
 
 One file per rule, named after its `id`. Keep the `title` under 60 characters,

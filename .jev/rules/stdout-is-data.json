@@ -6,13 +6,18 @@
       "title": "stdout carries data, never narration",
       "text": "PROTOCOL invariant 6: stdout is the answer, the framed `--each` answers, the `--jsonl` events, or `--list-tools`/`--help` output, and nothing else. Breadcrumbs and diagnostics go to stderr, because the consumer pipes stdout into `jq`.",
       "severity": "warning",
-      "applies_to": ["src/**/*.rs"],
-      "inspection": { "kind": "regex", "pattern": "println!|print!" },
+      "applies_to": [
+        "src/**/*.rs"
+      ],
+      "inspection": {
+        "kind": "regex",
+        "pattern": "println!|print!"
+      },
       "judgement": {
         "question": "Does this write to stdout something that is not data — a breadcrumb, a progress line, or a diagnostic that a consumer piping stdout into `jq` would receive as part of the answer?",
         "criteria": {
-          "true": "it is a diagnostic, breadcrumb, warning or narration on stdout",
-          "false": "it is the answer, a framed item header or answer, a `--jsonl` event, or `--list-tools`/`--help` output"
+          "true": "the text is for a human rather than for a pipe — a progress line, a breadcrumb, a warning, a narration of what the code is doing — including one written inside a loop the answer passes through",
+          "false": "it is the answer itself, an `--each` frame, a `--jsonl` event, or the JSON a `--list-tools` caller asked for, and a consumer parsing stdout expects exactly that"
         },
         "min_probability": 0.8
       },

@@ -6,13 +6,18 @@
       "title": "An assertion defends observable behaviour",
       "text": "A test earns its place by failing on a plausible bug. A length that grew, a value that is merely non-empty, a call that did not panic, or an assertion that the code echoed what the test supplied defends the implementation rather than the contract.",
       "severity": "warning",
-      "applies_to": ["tests/**/*.rs"],
-      "inspection": { "kind": "regex", "pattern": "assert(_eq|_ne)?!\\(" },
+      "applies_to": [
+        "tests/**/*.rs"
+      ],
+      "inspection": {
+        "kind": "regex",
+        "pattern": "assert(_eq|_ne)?!\\("
+      },
       "judgement": {
         "question": "Does this assertion defend what a consumer observes — a value, a boundary, an exit code, an ordering — or is it plumbing: a length that grew, a non-empty check, a bare did-not-fail, or an echo of what the test itself supplied?",
         "criteria": {
-          "true": "the assertion passes for any implementation that produces something, so no plausible bug would fail it",
-          "false": "it pins behaviour a consumer depends on — including a count, when the count is itself the contract (one request per invocation, one event per item)"
+          "true": "the assertion passes for any implementation that produces something — `!value.is_empty()`, a length that grew, a bare `is_ok()`, an assertion that a mock echoed what the test handed it — and nothing in it can distinguish a wrong implementation from a right one",
+          "false": "the assertion pins something a consumer depends on: a value, an error, a boundary, an ordering, or a count that is itself the contract"
         },
         "min_probability": 0.75
       },
