@@ -84,21 +84,54 @@ each rule loads, fires on a document written to violate it, and respects its
 floor — plus the scratch trees it builds. Nothing in the repository depends on
 it; `tests/rules.rs` is what CI runs.
 
-## Two enforcement layers
+## How the rules reach a model
 
-| layer | when it acts | what it is | what checks it |
-|---|---|---|---|
-| `.jev/rules/` (Jev) | on save and on idle in an editor, and never in CI | 24 rules; the decision model judges candidate lines, and findings arrive as diagnostics | `tests/rules.rs`, `local/verify-rules.py`, `:Jev inspect` |
-| `.omp/rules/` (TTSR) | **during generation** | 8 mechanical conventions; a regex over the edit/write payload interrupts the model mid-write, or reminds it in band, before the code lands | `omp ttsr list`, `omp ttsr test`, `local/verify-ttsr.py` |
+One rule set, `.jev/rules/`, and one consumer: the language server. Nothing else
+holds a copy — a second format for the same conventions is a second thing to
+keep in step, and the harness already has a way to ask the server.
 
-The split is deliberate: a reflex and a judgement. The regex layer costs
-nothing, fires on the wire as the code is being written, and can abort a turn —
-which is only safe because it never asks a model anything. The Jev layer is what
-catches the shapes a regex cannot name, and it is the one that can be wrong.
+The per-directory switch that makes OMP *use* it is `.omp/config.yml` in the
+repository:
 
-TTSR rules are discovered **when a session starts**, so a session that predates
-the files does not have them: restart OMP in this repository after editing
-`.omp/rules/`.
+```yaml
+lsp:
+  diagnosticsOnEdit: true    # off by default; writes already return diagnostics
+```
+
+Measured 2026-09-20: `lsp.diagnosticsOnWrite` is on by default and
+`lsp.diagnosticsOnEdit` is off, so a session built out of edits asks the servers
+nothing; `task.enableLsp` is off too, so subagents cannot ask either. `lsp.lazy`
+starts a server on first use rather than at launch.
+
+What the LSP returns depends on the server, measured 2026-09-20 in one file that
+had both a type error and a violation of a Jev rule:
+
+| server | a pull asks it | it answers with the file as it is now |
+|---|---|---|
+| rust-analyzer | yes | **yes** — `55:28 expected u32, found String` came back from a file edited seconds earlier |
+| `jev-lsp` | yes | **no** — the `println!` on the next line, which its own rule flags, produced nothing |
+
+The difference is where the answer comes from. rust-analyzer analyses the
+document when asked. `jev-lsp` serves findings from its last *pass*, and a pass
+is triggered by a save or an idle change — a pull is neither, and this client
+sends no change events at all. So the Jev layer answers only after a pass has
+run: `:Jev inspect` in an editor, or `jev.inspect --force`.
+
+What the model actually sees, measured 2026-09-20 in a session that started
+after the file above existed: an edit to a **linked** file comes back with its
+diagnostics in the tool result —
+`55:28 [error] [rust-analyzer] expected u32, found String` — so the mistake is
+in front of the model in the same turn it was made. Two things make this look
+silent when it is not: a file that is not in the module tree gets
+rust-analyzer's `unlinked-file` hint instead of being analysed (a hint, and it
+can arrive as a late notice after the tool result), and
+`lsp.diagnosticsDeduplicate`, on by default, suppresses what has already been
+shown for a file.
+
+Closing that is a change in **jev-lsp**, not another mechanism in the harness:
+run a pass for a document that is opened or pulled, instead of only for a
+document that changed. The harness cannot be made to send `didChange` for edits
+it performs itself.
 
 ## Known limits
 

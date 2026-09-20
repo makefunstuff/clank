@@ -1,0 +1,8 @@
+# Settings for this directory. The rules live in `.jev/rules/` and the language server is what
+# runs them, so the only thing configured here is whether the harness asks the server.
+#
+# Measured on 2026-09-20: `lsp.diagnosticsOnWrite` is on by default and
+# `lsp.diagnosticsOnEdit` is off, so a session made of edits asks the servers nothing and the
+# rules never reach the model on their own.
+lsp:
+  diagnosticsOnEdit: true
