@@ -40,6 +40,7 @@ const DEFAULT_ID: &str = "answer";
 
 /// Exit codes, named once so the tests and the docs agree with the code.
 const OK: i32 = 0;
+/// 1: the run failed — a gate the caller set, or a result that could not be produced
 const GATE_FAILED: i32 = 1;
 const USAGE: i32 = 2;
 const PROVIDER: i32 = 3;
@@ -654,7 +655,11 @@ fn run(args: Args) -> i32 {
 
     if args.json || questions.len() > 1 {
         let out = render(&args, &questions, &answers, &payload, provider, &model, elapsed_ms, &failures);
-        println!("{}", serde_json::to_string(&out).unwrap_or_default());
+        let Ok(text) = serde_json::to_string(&out) else {
+            eprintln!("clank-jev: the result object did not serialise; nothing was printed");
+            return GATE_FAILED;
+        };
+        println!("{text}");
     } else if args.print_reason {
         println!("{}", answers.first().and_then(|a| a.reason.clone()).unwrap_or_default());
     } else {

@@ -42,18 +42,21 @@ pub enum Fail {
     Model(String),
     /// filesystem/IO failure -> exit 1
     IO(String),
+    /// an internal invariant broke -> exit 1: a value clank built itself did not serialise,
+    /// which is a bug here rather than a failure of the model or the server
+    Internal(String),
 }
 
 impl Fail {
     pub fn code(&self) -> i32 {
         match self {
             Fail::Usage(_) => 2,
-            Fail::Model(_) | Fail::IO(_) => 1,
+            Fail::Model(_) | Fail::IO(_) | Fail::Internal(_) => 1,
         }
     }
     pub fn msg(&self) -> &str {
         match self {
-            Fail::Usage(m) | Fail::Model(m) | Fail::IO(m) => m,
+            Fail::Usage(m) | Fail::Model(m) | Fail::IO(m) | Fail::Internal(m) => m,
         }
     }
 }
@@ -181,10 +184,9 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
     };
 
     if args.list_tools {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&tools::definitions()).unwrap_or_default()
-        );
+        let text = serde_json::to_string_pretty(&tools::definitions())
+            .map_err(|e| Fail::Internal(format!("the tool definitions did not serialise: {e}")))?;
+        println!("{text}");
         return Ok(0);
     }
 
@@ -715,12 +717,14 @@ impl<'a> Runner<'a> {
             messages.push(json!({ "role": "assistant", "content": interim }));
         }
         if explored || !interim.trim().is_empty() {
+            let schema_text = serde_json::to_string(schema).map_err(|e| {
+                Fail::Internal(format!("the schema did not serialise for the final request: {e}"))
+            })?;
             messages.push(json!({
                 "role": "user",
                 "content": format!(
                     "Answer now, using the evidence above, with a single JSON object matching \
-                     this schema and nothing else:\n{}",
-                    serde_json::to_string(schema).unwrap_or_default()
+                     this schema and nothing else:\n{schema_text}"
                 ),
             }));
         }

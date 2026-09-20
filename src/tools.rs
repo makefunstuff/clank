@@ -16,7 +16,6 @@ Rules:
 - Answer from the context. If it does not contain the answer, say so in one line instead of guessing.
 - You cannot run commands or change files; you only read what you were given. Never describe actions you did not take.
 - Cite `file:line` when you refer to code.
-- Be concise.
 ";
 
 /// System prompt when `--tools` offers the read-only observers: they are for
@@ -33,7 +32,6 @@ Rules:
 - You only observe: you never write, delete, or run commands.
 - Prefer the piped context; when it and the filesystem disagree, the context is what you were asked about.
 - Cite `file:line` when you refer to code.
-- Be concise.
 ";
 
 pub fn definitions() -> Value {

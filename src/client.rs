@@ -69,7 +69,12 @@ pub fn stream_round(
         None => {}
     }
     if let Some(p) = req.debug_path {
-        let _ = std::fs::write(p, serde_json::to_string_pretty(&body).unwrap_or_default());
+        // A debug dump must not fail the run, so a write error is ignored; a body that will
+        // not serialise says so in the file, rather than leaving an empty one that reads as a
+        // request with no body at all.
+        let text = serde_json::to_string_pretty(&body)
+            .unwrap_or_else(|e| format!("<the request body did not serialise: {e}>"));
+        let _ = std::fs::write(p, text);
     }
 
     let mut request = agent.post(&url).header("Content-Type", "application/json");
