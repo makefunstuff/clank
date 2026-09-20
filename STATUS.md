@@ -75,6 +75,7 @@ says where the project is, what is open, and how to check any of it.
 cargo test                                            # 81 tests, no model needed
 python3 scripts/reflow-docs.py --check $(git ls-files '*.md' ':!fixtures/*')   # doc convention
 python3 local/verify-rules.py                         # machine-local scratch: needs jev and a stub
+python3 local/verify-ttsr.py                          # steering rules: fires on a violation, quiet on a clean snippet
 ```
 
 `local/` is gitignored. It holds the throwaway harness behind the rule set — it
@@ -82,6 +83,22 @@ starts a stub decision endpoint, rebuilds a probe repository, and checks that
 each rule loads, fires on a document written to violate it, and respects its
 floor — plus the scratch trees it builds. Nothing in the repository depends on
 it; `tests/rules.rs` is what CI runs.
+
+## Two enforcement layers
+
+| layer | when it acts | what it is | what checks it |
+|---|---|---|---|
+| `.jev/rules/` (Jev) | on save and on idle in an editor, and never in CI | 24 rules; the decision model judges candidate lines, and findings arrive as diagnostics | `tests/rules.rs`, `local/verify-rules.py`, `:Jev inspect` |
+| `.omp/rules/` (TTSR) | **during generation** | 8 mechanical conventions; a regex over the edit/write payload interrupts the model mid-write, or reminds it in band, before the code lands | `omp ttsr list`, `omp ttsr test`, `local/verify-ttsr.py` |
+
+The split is deliberate: a reflex and a judgement. The regex layer costs
+nothing, fires on the wire as the code is being written, and can abort a turn —
+which is only safe because it never asks a model anything. The Jev layer is what
+catches the shapes a regex cannot name, and it is the one that can be wrong.
+
+TTSR rules are discovered **when a session starts**, so a session that predates
+the files does not have them: restart OMP in this repository after editing
+`.omp/rules/`.
 
 ## Known limits
 

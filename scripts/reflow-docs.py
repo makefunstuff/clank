@@ -60,6 +60,20 @@ def fenced(lines):
     return out
 
 
+def frontmatter(lines):
+    """The lines of a leading `---` block: YAML, where a long line is a regex or a glob and
+    wrapping it would change the value rather than the layout."""
+    if not lines or lines[0].strip() != "---":
+        return [False] * len(lines)
+    out = []
+    for i, line in enumerate(lines):
+        out.append(True)
+        if i > 0 and line.strip() == "---":          # the closing marker, not the opening one
+            out.extend([False] * (len(lines) - len(out)))
+            return out
+    return [True] * len(lines)
+
+
 def prose(line):
     s = line.strip()
     return bool(s) and not s.startswith(("|", "```", "#", ">", "<"))
@@ -73,7 +87,7 @@ def bullet(line):
 
 def reflow(text):
     lines = text.split("\n")
-    skip = fenced(lines)
+    skip = [f or y for f, y in zip(fenced(lines), frontmatter(lines))]
     out, i = [], 0
     while i < len(lines):
         line = lines[i]
@@ -103,7 +117,7 @@ def reflow(text):
 
 def normalise(text):
     lines = text.split("\n")
-    skip = fenced(lines)
+    skip = [f or y for f, y in zip(fenced(lines), frontmatter(lines))]
     keep = [l for l, s in zip(lines, skip) if not s and prose(l)]
     return re.sub(r"\s+", " ", " ".join(keep))
 

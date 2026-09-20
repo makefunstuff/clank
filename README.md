@@ -31,6 +31,8 @@ answer through `jq`, and a failure with its reason and `exit 1`.
 - [.jev/README.md](.jev/README.md) — the repository's own design invariants, as
   rules Jev enforces in an editor
 - [STATUS.md](STATUS.md) — where the project is, what is open, how to check it
+- [.omp/rules/](.omp/rules/) — the same conventions as stream rules, which steer
+  a model *while* it writes
 
 ## Install
 
