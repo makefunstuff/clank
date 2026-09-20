@@ -1,14 +1,15 @@
 # clank cheatsheet
 
-`clank` behaves like a unix filter: prompt and context in on argv/stdin, data
-out on stdout, diagnostics on stderr. One prompt, one request, one answer, and
-the context is exactly what you piped — the shell does the searching, the
-fan-out and the looping.
+`clank` is a unix filter: prompt and context in on argv/stdin, data out on
+stdout, diagnostics on stderr. One prompt, one request, one answer, and the
+context is exactly what was piped.
 
-- **[docs/use-cases.md](docs/use-cases.md)** — real jobs, verified commands, prices and gates
-- **[docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md)** — running it against local models on a 16 GB Mac: which model per job, hallucination probes
-- **`clank-jev`** — the sibling binary for typed decisions: `--ask`/`--checks`, providers `typesafe` / `openrouter` / `kev`, gates in the exit code (see the README)
-- **[PROTOCOL.md](PROTOCOL.md)** — the contract: invariants, request sequence, event set, exit codes
+- [PROTOCOL.md](PROTOCOL.md) — invariants, request sequence, event set, exit
+  codes
+- [README.md](README.md) — install, `clank-jev`, containers, the verified list
+- [docs/use-cases.md](docs/use-cases.md) — jobs with their gates and prices
+- [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) —
+  local models on a 16 GB Mac
 
 Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
 `CLANK_BASE_URL=http://127.0.0.1:40583/v1`. Flags override `$CLANK_*`.
@@ -21,33 +22,36 @@ Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
 | stderr | breadcrumbs (`> tool …`, `< tool ok (N B)`), `--show-thinking` reasoning, errors |
 | stdin | prompt (if no `-m`/positional), else context; with `--each`, the item list |
 
-Exit codes: `0` ok · `1` model/server/IO, truncated answer, empty answer, or any
-failed `--each` item · `2` usage. `clank-jev` adds `3` for a provider, network or
-credential failure, so "could not ask" never looks like "did not pass". SIGPIPE restored, so `clank … | head` dies
-cleanly. Nothing is ever coloured — there is no `NO_COLOR` to honour; `-q`
-silences breadcrumbs.
+| code | meaning |
+|---|---|
+| `0` | ok |
+| `1` | model/server/IO failure, a truncated answer, an empty answer, or any failed `--each` item |
+| `2` | usage |
+| `3` | `clank-jev` only: provider, network or credential failure |
+
+SIGPIPE is restored, so `clank … | head` dies cleanly. Output is never coloured:
+there is no `NO_COLOR` to honour, and `-q` silences the breadcrumbs.
 
 ## One-liners
 
 ```sh
-# nothing to pipe? ask about the workspace and let it look around
+# nothing to pipe: ask about the workspace, let the model look around
 clank --thinking off -m "where is the transcript cap defined? cite file:line"
 
 # nothing to pipe and nothing to look at: blind on purpose
 clank --no-tools -m "write a regex that matches ISO-8601 dates"
 
-# ask about a pipe or a file
+# a pipe or a file as context
 rg "userData" src/ | clank --thinking off -m "what does this do?"
 clank --thinking off -m "explain this" < src/main.rs
 sed -n '10,40p' src/main.rs | clank -m "what does this do?"
 
-# context from files (repeatable, in order) and from a tree
+# context files (repeatable, in order), and a tree
 clank -c ctx.json -m "summarize"
 clank -c a.json -c b.txt -m "summarize both"
 #   [{"text": "…"}, {"file": "rel/path"}, {"children": [{"file": "a.md"}]}]
 
-# map one prompt over many items, one framed answer each.
-# the item IS the context — hand over text, not paths (see Traps below)
+# one prompt over many items, one framed answer each
 rg -n "TODO" src/ | clank --each --thinking off -m "one line: actionable now, or not?"
 git log --format=%s -5 | clank --each -m "one line: rewrite in the imperative mood"
 find src -name '*.rs' -print0 | clank --each -0 -m "one line: what is this path for?"
@@ -58,37 +62,12 @@ for f in src/*.rs; do
   echo
 done
 
-# decisions for routing: pick one of your options, branch on it
+# typed decisions for routing, branching on the exit code
 route=$(printf '%s' "$task" | clank-jev --ask 'What kind of task is this?' --choice code,prose,math --min-prob 0.7)
 case "$route" in code) clank --model local-code -m "$task" ;; *) clank --model local-fast -m "$task" ;; esac
 printf '%s' "$text" | clank-jev --ask 'Is this a refund request?' --boolean       # prints true|false
-cat state.txt | clank-jev --checks checks.json --json | jq -r '.answers.team.value'
 printf '%s' "$trace" | clank-jev --checks fixtures/checks-verification.json --min-prob 0.6   # exit 1 = a claim conflicts with the tool results
 clank-jev --provider kev --ask 'Which team?' --choice billing,shipping < ticket.txt           # local, no credentials
-
-# --- clank + clank-jev: the two stages compose in both orders
-
-# route, then generate: the decision picks the model
-route=$(printf '%s' "$task" | clank-jev -q --ask 'What kind of task is this?' --choice code,prose,math --min-prob 0.7) || route=unclear
-case "$route" in code) clank --model local-code -c src/context.rs -m "$task" ;; *) clank --model local-fast -m "$task" ;; esac
-
-# generate, then validate: clank writes, jev gates it (fixtures/checks-commit.json)
-msg=$(git show HEAD | clank -q --thinking off -m 'Write the commit message for this diff.')
-{ git show --stat HEAD; printf 'MESSAGE:\n%s\n' "$msg"; } | clank-jev --checks fixtures/checks-commit.json --min-prob 0.6
-
-# audit a trace after the fact: a --jsonl trace is evidence like any other
-clank --jsonl -m 'where is the cap defined? cite file:line' > trace.jsonl
-clank-jev --checks fixtures/checks-verification.json --min-prob 0.6 < trace.jsonl
-
-# fan out, act only on confident decisions (the loop is the shell's)
-while read -r s; do v=$(printf '%s' "$s" | clank-jev -q --ask 'Could this break a caller?' --boolean --min-prob 0.7) || { echo "unclear: $s"; continue; }; [ "$v" = true ] && echo "check: $s"; done < <(git log --format=%s -8)
-
-# escalate local -> hosted: 83 ms and $0 before touching the network
-ask() { printf '%s' "$1" | clank-jev -q --provider "$2" --ask 'Which team owns this?' --choice BILLING,TECHNICAL,ACCOUNT --min-prob "$3"; }
-v=$(ask "$state" kev 0.9) || v=$(ask "$state" openrouter 0.5)
-
-# break a tie between two answers, and let it say "both are wrong"
-printf 'A: %s\n\nB: %s\n' "$a" "$b" | clank-jev --ask 'Which names the exact file:line?' --choice A,B --min-prob 0.6
 
 # structured output: one request, grammar enforced by the server
 clank -m "…" --json-schema @schema.json | jq -er .
@@ -97,18 +76,20 @@ clank --thinking off --json-schema '{"type":"object","properties":{"kind":{"type
 # reusable instruction block written once, passed every time
 clank --system @prompts/review-sh.md -c demo.sh -m "Review the script."
 
-# continue a run: a trace is context
+# a trace is context: continue a run, or read it back
 clank --jsonl -m "…" | clank -m "what did you say?"
 clank -c trace.jsonl -m "what did you read?"
-
-# machine-readable stream, and the run it came from
-clank --jsonl -m "…" | jq -c 'select(.type=="assistant") | .content'
 clank --jsonl -m "…" | jq -c 'select(.type=="run")'
 ```
 
+The two stages compose in both orders — route then generate, generate then
+validate, audit a trace afterwards, escalate local to hosted, break a tie. Six
+worked examples with their observed answers are in
+[docs/clank-jev.md](docs/clank-jev.md#combinations).
+
 ## `clank-jev` flags
 
-The decision stage. Credentials come from the environment only.
+Credentials come from the environment only.
 
 | flag | meaning |
 |---|---|
@@ -117,7 +98,7 @@ The decision stage. Credentials come from the environment only.
 | `--boolean` | yes/no, printed as `true` or `false` |
 | `--score low,mid,high` | ordered levels, lowest first; prints the level number |
 | `--checks FILE` | a JSON file of questions: `{id: {type, instructions, criteria, reasons?}}` |
-| `--min-prob P` | exit 1 unless the decision is at least this confident — for a yes/no question a decisive *no* has p≈0 and confidence≈1, so the gate is on the decision, not on "yes" |
+| `--min-prob P` | exit 1 unless the decision is at least this confident; for a yes/no question a decisive *no* has p≈0 and confidence≈1, so the gate is on the decision, not on "yes" |
 | `--expect VALUE` | exit 1 unless the decision equals this (one question) |
 | `--expect-min N` | exit 1 unless an ordered decision is at least this level |
 | `--print-reason` | print the closed-choice reason instead of the value |
@@ -129,8 +110,8 @@ The decision stage. Credentials come from the environment only.
 | `-q` / `--quiet` | no diagnostic line on stderr |
 
 `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) selects the TypeSafe
-route; `OPENROUTER_API_KEY` selects OpenRouter's Decisions endpoint; `--provider
-kev` needs no credential at all.
+route; `OPENROUTER_API_KEY` selects OpenRouter's Decisions endpoint;
+`--provider kev` needs no credential.
 
 ## Flags
 
@@ -154,8 +135,7 @@ kev` needs no credential at all.
 | `--max-tokens N` | | completion cap (default 8192) |
 | `--max-rounds N` | | tool-call rounds with `--tools` (default 12) |
 
-`--json-schema` and `--system` accept `@path` to read the payload from a file —
-that is how a schema or a skill clank wrote earlier comes back in.
+`--json-schema` and `--system` accept `@path` to read the payload from a file.
 
 Debug: `CLANK_DEBUG=/path/req.json clank …` writes the exact request body of the
 first round.
@@ -176,21 +156,23 @@ printf '%s\n' a b c | clank --json-schema @list-schema.json -m "…"      # one 
 
 ## Traps
 
-- **`--each` items are text, not files.** `printf 'src/main.rs\n' | clank --each
-  -m "summarize this file"` shows the model the path and nothing else, and it
-  answers accordingly (*"This file exists but its purpose is not described in the
-  provided context"*, measured on oMLX 2026-09-19). Read files in the shell — the
-  `-c` loop above — or pipe content you already gathered (`rg -n …`).
-- **A `while read` loop must give each call its own stdin.** clank reads stdin, so
-  without `</dev/null` the first call eats the rest of the item list.
+- **`--each` items are text, not files.**
+  `printf 'src/main.rs\n' | clank --each -m "summarize this file"` shows the
+  model the path and nothing else; measured on oMLX (2026-09-19) it answered
+  *"This file exists but its purpose is not described in the provided context."*
+  Read the files in the shell (the `-c` loop above) or pipe content you already
+  gathered.
+- **A `while read` loop must give each call its own stdin.** Without
+  `</dev/null` the first call eats the rest of the item list.
 - **`--json-schema` is the server's grammar to enforce, not clank's.** It is not
-  enforced everywhere it is accepted: measured on oMLX, one model returned bare
-  JSON, one wrapped it in a fence, one answered in prose. Gate with `jq -er`.
-- **A budget overrun is `exit 1`, not a short answer.** `--max-tokens` cutting the
-  answer is a failure by design, so it cannot ship through a `&&` chain.
-- **`xargs -P` against one endpoint is not free parallelism.** Measured on oMLX:
-  12.5 s with `-P2` against 5.8 s serial over four files, plus interleaved stdout.
-  It went the other way on llama.cpp (`docs/use-cases.md` §3) — measure yours.
+  enforced everywhere it is accepted: on oMLX one model returned bare JSON, one
+  wrapped it in a fence, one answered in prose. Gate with `jq -er`.
+- **A budget overrun is `exit 1`, not a short answer.** `--max-tokens` cutting
+  the answer is a failure, so it cannot ship through a `&&` chain.
+- **`xargs -P` against one endpoint is not free parallelism.** At four items on
+  llama.cpp it won: 2.4 s serial against 1.5 s with `-P2`. On oMLX (2026-09-19)
+  it lost: 5.8 s serial against 12.5 s, with the answers interleaving on stdout.
+  Measure yours ([docs/use-cases.md](docs/use-cases.md) §3).
 
 ## Integrations
 
@@ -198,7 +180,7 @@ printf '%s\n' a b c | clank --json-schema @list-schema.json -m "…"      # one 
 # whatever is on a tmux pane (verified)
 tmux capture-pane -p | clank --thinking off -m "one line: what is wrong?"
 
-# output anywhere: a file (atomic), a FIFO, a socket
+# output anywhere: a file (write, gate, rename), a FIFO, a socket
 clank -m "…" > out.tmp && jq -e . out.tmp && mv out.tmp out.json
 mkfifo /tmp/p && clank -m "…" > /tmp/p & cat /tmp/p
 socat UNIX-LISTEN:/tmp/s - > got.txt & clank -m "…" | socat - UNIX-CONNECT:/tmp/s
@@ -211,8 +193,7 @@ socat UNIX-LISTEN:/tmp/s - > got.txt & clank -m "…" | socat - UNIX-CONNECT:/tm
 ```
 
 ```sh
-# herdr: syntax checked against herdr pane --help / herdr agent --help;
-# not executed in the review (it would create panes in your session)
+# herdr: syntax checked against herdr pane --help and herdr agent --help, not executed
 herdr pane list | jq -r '.result.panes[].pane_id'
 herdr pane split --current --direction right --ratio 0.4
 herdr pane run <PANE_ID> 'rg "userData" src/ | clank --thinking off -m "what does this do?"'
@@ -220,5 +201,5 @@ herdr pane read <PANE_ID> --source recent
 herdr agent prompt <TARGET> "review the diff in src/" --wait
 ```
 
-`pane run` sends the text and an Enter; there is no `pane wait-output` — for
+`pane run` sends the text and an Enter; there is no `pane wait-output`. For
 agent panes, wait with `herdr agent wait <TARGET> --until <status>`.

@@ -2,13 +2,12 @@
 
 | file | what it is |
 |---|---|
-| [images/clank-demo.gif](images/clank-demo.gif) | the README's demo: a real session recorded by `scripts/record-demo.sh` (VHS tape `scripts/demo.tape`) |
-| [use-cases.md](use-cases.md) | real jobs: the command, the gate that says it worked, the price |
-| [research-harness-constraints.md](research-harness-constraints.md) | harness research: what the model already guarantees, probe results, latency measurements, clank vs pi |
-| [decision-readout.md](decision-readout.md) | research: reading option probabilities instead of generating answers (Jev/OpenJev pattern) |
-| [pi-review.md](pi-review.md) | review of `earendil-works/pi` as an implementation: what to steal, what not to copy |
-| [../README.md](../README.md#decisions-for-routing-clank-jev) | the sibling binary: typed decisions for routing, providers `typesafe` / `openrouter` / `kev`, gates in the exit code |
-| [macbook-omlx-local-inference.md](macbook-omlx-local-inference.md) | clank with oMLX-served local models on a 16 GB M1 Pro: which model per job, the programming workflow as one-liners, hallucination probes, what to take from Jev to make it less hallucinatory, and what does not work |
+| [use-cases.md](use-cases.md) | jobs built out of the stage: the command, the gate that says it worked, the price |
+| [clank-jev.md](clank-jev.md) | the sibling binary: providers, reason sets, gates, exit codes, six composed examples |
+| [macbook-omlx-local-inference.md](macbook-omlx-local-inference.md) | clank against oMLX-served models on a 16 GB M1 Pro: which model per job, hallucination probes, what does not work |
+| [images/clank-demo.gif](images/clank-demo.gif) | the README's demo, a real session recorded by `scripts/record-demo.sh` (VHS tape `scripts/demo.tape`) |
+| [history/](history/README.md) | closed research and review records, kept because later documents cite them |
 
-The contract itself lives in [../PROTOCOL.md](../PROTOCOL.md); flags and
-one-liners in [../CHEATSHEET.md](../CHEATSHEET.md).
+The contract is [../PROTOCOL.md](../PROTOCOL.md); flags and one-liners are in
+[../CHEATSHEET.md](../CHEATSHEET.md); the repository's enforceable conventions
+are the rules in [../.jev/rules](../.jev/rules).
