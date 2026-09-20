@@ -2,6 +2,8 @@
 name = "clank"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
+repository = "https://github.com/makefunstuff/clank"
 description = "Minimal unix-style local-inference harness: stdin/stdout CLI with read-only filesystem tools"
 
 [[bin]]
