@@ -165,12 +165,13 @@ fn clank(args: &[&str], stdin: &str) -> Run {
         .stderr(Stdio::piped())
         .spawn()
         .expect("spawn clank");
-    child
+    // See tests/jev.rs: a child that exits before reading stdin closes the pipe, and the
+    // write then fails with EPIPE. Several tests drive exactly that path on purpose.
+    let _ = child
         .stdin
         .take()
         .expect("stdin")
-        .write_all(stdin.as_bytes())
-        .expect("write stdin");
+        .write_all(stdin.as_bytes());
     let out: Output = child.wait_with_output().expect("wait clank");
     Run {
         code: out.status.code().unwrap_or(-1),

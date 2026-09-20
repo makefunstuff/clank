@@ -137,7 +137,9 @@ fn the_decision_stage_contract_is_written_down_and_true() {
     let mut child = cmd.spawn().unwrap();
     {
         use std::io::Write;
-        child.stdin.as_mut().unwrap().write_all(b"state").unwrap();
+        // The child exits 3 without reading stdin, so the write may fail with EPIPE; the
+        // assertion is on the exit code. See tests/jev.rs.
+        let _ = child.stdin.as_mut().unwrap().write_all(b"state");
     }
     let out = child.wait_with_output().unwrap();
     assert_eq!(out.status.code(), Some(3), "missing credentials are 3");

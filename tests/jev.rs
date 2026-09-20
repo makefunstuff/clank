@@ -93,12 +93,15 @@ fn run_provider(args: &[&str], state: &str, url: &str, key: Option<&str>, provid
         cmd.env("TYPESAFE_API_KEY", k);
     }
     let mut child = cmd.spawn().expect("spawn clank-jev");
-    child
+    // A child that exits before reading stdin — a usage error, a missing credential —
+    // closes the pipe, so this write can fail with EPIPE. That outcome is what several of
+    // the assertions below are about, and the exit code and the two channels still carry
+    // the verdict, so the write is not something to panic on.
+    let _ = child
         .stdin
         .as_mut()
         .expect("stdin")
-        .write_all(state.as_bytes())
-        .expect("write state");
+        .write_all(state.as_bytes());
     let out = child.wait_with_output().expect("wait");
     (
         String::from_utf8_lossy(&out.stdout).to_string(),
