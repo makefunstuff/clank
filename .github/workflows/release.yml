@@ -1,0 +1,107 @@
+# Cut a release from a tag: `git tag v0.1.0 && git push origin v0.1.0`.
+#
+# Every asset is built on the platform it runs on, so nothing is cross-compiled and each
+# archive can be smoke-tested before it is attached. The release is created as a draft and
+# published only after every target has uploaded, so a half-published release is not a
+# state this can reach.
+#
+# The only action used is the first-party checkout: rustup and the GitHub CLI are already
+# on the runner images, and hashing is done with python3 rather than naming a digest tool
+# that differs between glibc and BSD userlands.
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    name: draft the release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0          # the notes are generated from the history
+
+      # A release whose name disagrees with the binaries inside it is worse than no
+      # release, so the tag and the manifest are checked before anything is built.
+      - name: The tag names the version in Cargo.toml
+        run: |
+          version=$(cargo metadata --no-deps --format-version 1 \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["packages"][0]["version"])')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "tag $GITHUB_REF_NAME does not name Cargo.toml's version $version" >&2
+            exit 1
+          fi
+          echo "tag and manifest agree on $version"
+
+      - name: Create the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release create "$GITHUB_REF_NAME" --draft --verify-tag --title "$GITHUB_REF_NAME" --generate-notes
+
+  build:
+    name: build (${{ matrix.target }})
+    needs: draft
+    runs-on: ${{ matrix.os }}
+    env:
+      RUSTFLAGS: -D warnings
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      # The archive is only worth publishing if the two binaries inside it run. Both are
+      # native here, so this is the shipped artifact answering, not a stand-in.
+      - name: Smoke the binaries
+        run: |
+          cd target/${{ matrix.target }}/release
+          ./clank --version
+          ./clank-jev --version
+          ./clank --list-tools | python3 -c 'import json,sys; tools = json.load(sys.stdin); assert len(tools) == 4, tools; print("4 read-only observers")'
+
+      - name: Package the archive and its checksum
+        run: |
+          name="clank-${{ github.ref_name }}-${{ matrix.target }}"
+          mkdir -p "dist/$name"
+          cp "target/${{ matrix.target }}/release/clank" "target/${{ matrix.target }}/release/clank-jev" "dist/$name/"
+          cp README.md LICENSE CHEATSHEET.md PROTOCOL.md "dist/$name/"
+          tar -C dist -czf "dist/$name.tar.gz" "$name"
+          cd dist
+          python3 -c "import hashlib; d=hashlib.sha256(open('$name.tar.gz','rb').read()).hexdigest(); print(d + '  $name.tar.gz')" > "$name.tar.gz.sha256"
+          cat "$name.tar.gz.sha256"
+
+      - name: Upload to the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$GITHUB_REF_NAME" dist/*.tar.gz dist/*.sha256
+
+  publish:
+    name: publish
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # The one step that makes the release visible: it runs only if every target above
+      # built, passed its smoke test and uploaded.
+      - name: Publish the draft
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name'
