@@ -76,6 +76,20 @@ Token knobs (`--thinking off`, lower `--max-tokens`, `--no-tools` when piped):
 Local hooks (optional): `git config core.hooksPath .githooks` — see CHEATSHEET /
 STATUS for pre-commit / soft pre-push jev.
 
+## Flags (index)
+
+Meanings live in [CHEATSHEET.md](CHEATSHEET.md). Listed so the surface stays
+short without drifting from `--help`.
+
+`clank`: `--api-key`, `--base-url`, `--context`, `--each`, `--json-schema`,
+`--jsonl`, `--list-tools`, `--max-rounds`, `--max-tokens`, `--message`,
+`--model`, `--no-tools`, `--null`, `--quiet`, `--show-thinking`, `--system`,
+`--thinking`, `--timeout`, `--tools`
+
+`clank-jev`: `--ask`, `--base-url`, `--boolean`, `--checks`, `--choice`,
+`--expect`, `--expect-min`, `--json`, `--min-prob`, `--model`, `--print-reason`,
+`--provider`, `--quiet`, `--score`, `--timeout`
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
