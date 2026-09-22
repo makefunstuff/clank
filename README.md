@@ -29,10 +29,14 @@ context, `--each`, schema through `jq`, failure with reason and `exit 1`.
 
 ## Install
 
-Not on crates.io: the crate named `clank` there is an unrelated project. Two
-binaries, `clank` and its decision-stage sibling `clank-jev`, six direct
-dependencies, and nothing system-provided beyond a C compiler (`ring`, for TLS;
-no OpenSSL to find).
+Package `clank-cli-app` on crates.io; binaries stay `clank` and `clank-jev` (the
+crate named `clank` there is unrelated — never `cargo install clank`). Six
+direct dependencies, and nothing system-provided beyond a C compiler (`ring`,
+for TLS; no OpenSSL to find).
+
+```sh
+cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev
+```
 
 Prebuilt archives are attached to each
 [release](https://github.com/makefunstuff/clank/releases) — linux x86_64, macOS
@@ -45,7 +49,7 @@ sha256sum -c clank-*.tar.gz.sha256      # macOS: shasum -a 256 -c
 tar xzf clank-*.tar.gz
 ```
 
-From source, which is what you want if you are wiring it into something else:
+From git as a fallback, or if you are wiring it into something else:
 
 ```sh
 cargo install --locked --git https://github.com/makefunstuff/clank   # -> ~/.cargo/bin/clank

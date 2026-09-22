@@ -1,6 +1,6 @@
 # clank — status
 
-Project log, last written 2026-09-20. The contract is
+Project log, last written 2026-09-22. The contract is
 [PROTOCOL.md](PROTOCOL.md); the reference is [README.md](README.md); the dated
 evidence is
 [docs/history/verification-log.md](docs/history/verification-log.md). This file
@@ -18,9 +18,11 @@ says where the project is, what is open, and how to check any of it.
    floor cannot yet be set just above it. Re-run with `:Jev inspect` after a
    rules edit, or `jev inspect <file> --force` with `JEV_DECIDE_BASE_URL`
    pointed at a local `kev`.
-2. **The repository has not been released.** No tag exists, so the release
-   workflow's Actions plumbing is unexercised; only its shell has been run,
-   locally. The first `git tag v0.1.0 && git push origin v0.1.0` is the test.
+2. **crates.io publish is gated, not automatic yet.** GitHub release `v0.1.0` is
+   out. The package is renamed to `clank-cli-app` (binaries stay `clank` /
+   `clank-jev`). CI dry-runs `cargo publish --locked` on every PR; a real
+   publish is `workflow_dispatch` only until one manual publish has landed — do
+   not trust auto tag→crates.io on the first renamed tag.
 3. **Whether to keep the 2026-09-20 splits**: `docs/clank-jev.md` (out of
    README) and `docs/history/` (closed records). Both are reversible with
    `git mv`.
@@ -59,11 +61,15 @@ says where the project is, what is open, and how to check any of it.
   network. `tests/wire.rs` (24, the protocol), `tests/jev.rs` (10, the sibling),
   `tests/docs.rs` (6, docs vs code), `tests/rules.rs` (3, the rules themselves),
   plus 38 unit tests in `src/`.
+- Package name on crates.io is `clank-cli-app`; the installed binaries remain
+  `clank` and `clank-jev`. Install: `cargo install clank-cli-app --locked`.
 - CI on every push and pull request: warnings are errors, `cargo test`
   (including `tests/jev_ci_stub.rs`, which drives `clank-jev` against a local
-  stub — no secret and no provider), and the docs wrapping check. Release on a
-  `v*` tag: three native targets, each archive smoke-tested before it is
-  attached, published only when all of them are up.
+  stub — no secret and no provider), the docs wrapping check, and
+  `cargo publish --dry-run --locked`. Release on a `v*` tag: three native
+  targets, each archive smoke-tested before it is attached, published only when
+  all of them are up. crates.io is a separate manual `workflow_dispatch` until
+  that path has been exercised once.
 - `.jev/rules/` holds 26 rules, in three groups: the contract's invariants, the
   taste the code is held to (weightless code, needless abstraction, avoidable
   copies, silent fallbacks, a value with two homes, comments that restate the
