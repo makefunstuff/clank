@@ -23,6 +23,12 @@
   <pre><code>cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0</code></pre>
   <p class="note">Prebuilt archives (linux x86_64, macOS arm64/x86_64) are on the <a href="https://github.com/makefunstuff/clank/releases/tag/v0.1.0">v0.1.0 release</a>.</p>
 
+  <h2>30s smoke</h2>
+  <p class="note">After install, point at your OpenAI-compatible server and prove the pipe:</p>
+  <pre><code>export CLANK_BASE_URL=http://127.0.0.1:8080/v1
+export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
+clank -m 'reply with exactly: pong'    # -> pong, exit 0</code></pre>
+
   <h2>Harness cost</h2>
   <p class="note">2026-09-22 · <code>opencode-go/glm-5.3-flash</code> · tools off · prompt → <code>pong</code>. Pipe vs agent CLI on the same model, not “fastest AI.” Agent harness tax still shows with <code>--no-tools</code>.</p>
   <ul>
@@ -32,12 +38,6 @@
     <li><code>opencode</code> · 5.7s · ~562MB</li>
   </ul>
   <p class="note">Method and caveats: <a href="https://github.com/makefunstuff/clank/blob/main/docs/history/clank-vs-agents-2026-09-22.md">docs/history/clank-vs-agents-2026-09-22.md</a>.</p>
-
-  <h2>First run</h2>
-  <pre><code>export CLANK_BASE_URL=http://127.0.0.1:8080/v1
-export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
-clank -m 'reply with exactly: pong'    # -> pong, exit 0</code></pre>
-  <p class="note">Needs an OpenAI-compatible endpoint with tool calling. Set <code>CLANK_BASE_URL</code> and <code>CLANK_MODEL</code> yourself.</p>
 
   <h2>Docs</h2>
   <ul class="links">
