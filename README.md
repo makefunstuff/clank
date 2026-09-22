@@ -86,6 +86,23 @@ two variables plus the flags in [Configuration](#configuration) are the whole
 configuration: no config file, no state on disk. Container instead of a
 toolchain: [In a container](#in-a-container).
 
+
+## Harness cost (dated)
+
+**2026-09-22** one-shot on the same Go model (`opencode-go/glm-5.3-flash`),
+tools off, prompt `→ pong`. This is **pipe vs agent CLI**, not a quality
+benchmark — agent harnesses still pay TUI/runtime tax with `--no-tools`.
+
+| | wall median | peak RSS |
+|---|---:|---:|
+| **clank** (pipe) | **0.75 s** | **~5 MB** |
+| pi | 2.2 s | ~177 MB |
+| omp | 3.4 s | ~371 MB |
+| opencode | 5.7 s | ~562 MB |
+
+Full method, caveats, and runs:
+[docs/history/clank-vs-agents-2026-09-22.md](docs/history/clank-vs-agents-2026-09-22.md).
+
 ## What it is for
 
 Ask a model about text you already have, and get back something your shell can
@@ -101,22 +118,6 @@ clank --system @prompts/review-sh.md -c script.sh -m "review the script"
 ```
 
 ## Keeping it fast
-
-### Harness cost (dated)
-
-**2026-09-22** one-shot on the same Go model (`opencode-go/glm-5.3-flash`),
-tools off, prompt `→ pong`. This is **pipe vs agent CLI**, not a quality
-benchmark — agent harnesses still pay TUI/runtime tax with `--no-tools`.
-
-| | wall median | peak RSS |
-|---|---:|---:|
-| **clank** (pipe) | **0.75 s** | **~5 MB** |
-| pi | 2.2 s | ~177 MB |
-| omp | 3.4 s | ~371 MB |
-| opencode | 5.7 s | ~562 MB |
-
-Full method, caveats, and runs:
-[docs/history/clank-vs-agents-2026-09-22.md](docs/history/clank-vs-agents-2026-09-22.md).
 
 The model is the constraint (clank's own share is 1 ms of startup), so the lever
 is the tokens you pay for:
