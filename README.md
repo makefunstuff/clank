@@ -29,10 +29,14 @@ context, `--each`, schema through `jq`, failure with reason and `exit 1`.
 
 ## Install
 
-Not on crates.io: the crate named `clank` there is an unrelated project. Two
-binaries, `clank` and its decision-stage sibling `clank-jev`, six direct
-dependencies, and nothing system-provided beyond a C compiler (`ring`, for TLS;
-no OpenSSL to find).
+**Install line 1:** package `clank-cli-app` → binaries `clank` and `clank-jev`
+(package ≠ binary). The crates.io crate named `clank` is unrelated — never
+`cargo install clank`. Six direct dependencies, and nothing system-provided
+beyond a C compiler (`ring`, for TLS; no OpenSSL to find).
+
+```sh
+cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev
+```
 
 Prebuilt archives are attached to each
 [release](https://github.com/makefunstuff/clank/releases) — linux x86_64, macOS
@@ -45,13 +49,14 @@ sha256sum -c clank-*.tar.gz.sha256      # macOS: shasum -a 256 -c
 tar xzf clank-*.tar.gz
 ```
 
-From source, which is what you want if you are wiring it into something else:
+Until the first crates.io publish (manual Actions dispatch with
+`publish_crates_io` — not auto on tag), or as a pinable fallback:
 
 ```sh
-cargo install --locked --git https://github.com/makefunstuff/clank   # -> ~/.cargo/bin/clank
+cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
 ```
 
-`--locked` holds the dependency graph to the committed `Cargo.lock`;
+`--locked` holds the dependency graph to the committed `Cargo.lock`; `--tag` /
 `--rev <sha>` pins clank itself. That directory is on `PATH` if you have
 installed anything with cargo before. From a checkout instead — `src/` is 2.8k
 lines:

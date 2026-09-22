@@ -42,3 +42,14 @@ jobs:
       - name: The docs are wrapped to their own convention
         # fixtures/ is excluded: those files are test input, and their bytes are the test.
         run: python3 scripts/reflow-docs.py --check $(git ls-files '*.md' ':!fixtures/*')
+
+  # Packaging gate: catches missing files, bad manifest metadata, and lockfile
+  # drift before a real crates.io publish. Needs no token.
+  publish-dry-run:
+    name: cargo publish --dry-run
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Package as crates.io would
+        run: cargo publish --dry-run --locked

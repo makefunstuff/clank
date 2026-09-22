@@ -14,6 +14,16 @@ context is exactly what was piped.
 Set `CLANK_BASE_URL` and `CLANK_MODEL` (flags override `$CLANK_*`). Do not rely
 on a laptop-only built-in default — point at your OpenAI-compatible server.
 
+
+## Install
+
+```sh
+cargo install clank-cli-app --locked   # package name; runs as clank / clank-jev
+# fallback: cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
+```
+
+Never `cargo install clank` (unrelated crates.io crate).
+
 ## Contract
 
 | stream | carries |
