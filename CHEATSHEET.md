@@ -11,8 +11,8 @@ context is exactly what was piped.
 - [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) —
   local models on a 16 GB Mac
 
-Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
-`CLANK_BASE_URL=http://127.0.0.1:40583/v1`. Flags override `$CLANK_*`.
+Set `CLANK_BASE_URL` and `CLANK_MODEL` (flags override `$CLANK_*`). Do not rely
+on a laptop-only built-in default — point at your OpenAI-compatible server.
 
 ## Contract
 
@@ -31,6 +31,28 @@ Defaults: `CLANK_MODEL=qwen3.8-27b-gsq-rco-iq3xxs`,
 
 SIGPIPE is restored, so `clank … | head` dies cleanly. Output is never coloured:
 there is no `NO_COLOR` to honour, and `-q` silences the breadcrumbs.
+
+## Performance / memory
+
+The big bill is the **model server**, not this process (`clank` is a few MB).
+Prefer:
+
+- `--thinking off` (or non-TTY default when coding ships it) — thinking tokens
+  cost latency/RAM whether shown or not
+- cut `--max-tokens` for scripts — default **8192** is the silent fat default
+  for one-liners / `--each`
+- `--no-tools` when context is already piped — tool rounds multiply requests
+- pipe a slice (`sed`/`rg`), not a whole tree via `-c`
+- keep `--each` serial on-device; `xargs -P` multiplies **server** VRAM (local
+  MLX/omlx can OOM) — not this binary
+
+Measure `/usr/bin/time -v` on `clank` **and** the inference server RSS
+separately. Do not compare `clank` RSS to an OpenCode TUI (~hundreds of MB) as
+if they were the same product — pipe stage vs agent harness.
+
+**Path footgun:** `--each` items that look like paths are still **text** unless
+you `-c` / shell-read content into the prompt. Warn once per run when coding
+adds it; until then, compose with `cat`/`rg` yourself.
 
 ## One-liners
 

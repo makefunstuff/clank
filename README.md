@@ -1,38 +1,31 @@
 # clank — minimal unix-style inference harness
 
 A Rust CLI that is one stage in a pipeline: prompt and context in on argv/stdin,
-the answer on stdout, diagnostics on stderr, a verdict in the exit code. It
-speaks to any OpenAI-compatible endpoint; built against llama.cpp's server,
-since verified against a remote gateway and an MLX one.
+the answer on stdout, diagnostics on stderr, a verdict in the exit code. Speaks
+to any OpenAI-compatible endpoint. Sibling binary `clank-jev` routes and gates;
+compose them — do not fold chat/agent UX into `clank`.
 
 ```sh
 cargo build --release
-./target/release/clank [OPTIONS] [PROMPT...]
+export CLANK_BASE_URL=http://127.0.0.1:8080/v1   # your server — no laptop-only default
+export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
+./target/release/clank -m 'reply with exactly: pong'    # -> pong, exit 0
 ```
 
 ![clank in a shell](docs/images/clank-demo.gif)
 
-Recorded against a live server by `scripts/record-demo.sh`: the four read-only
-observers, the pipe as context, `--each` over three items, a schema-constrained
-answer through `jq`, and a failure with its reason and `exit 1`.
+Recorded against a live server by `scripts/record-demo.sh`: observers, pipe as
+context, `--each`, schema through `jq`, failure with reason and `exit 1`.
 
-- [CHEATSHEET.md](CHEATSHEET.md) — flags, one-liners, integrations
-- [PROTOCOL.md](PROTOCOL.md) — the contract: invariants, request sequence,
-  context doctrine, event set, exit codes
-- [docs/use-cases.md](docs/use-cases.md) — the job families, each with its gate
-  and its price
-- [docs/clank-jev.md](docs/clank-jev.md) — typed decisions for routing:
-  providers, gates, six composed examples
+**Read next:** [CHEATSHEET.md](CHEATSHEET.md) · [PROTOCOL.md](PROTOCOL.md)
+
+- [docs/use-cases.md](docs/use-cases.md) — job families, gates, prices
+- [docs/clank-jev.md](docs/clank-jev.md) — typed routing decisions
 - [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) —
-  local models on a 16 GB Mac: which model per job, hallucination probes, what
-  does not work
-- [docs/history/](docs/history/README.md) — closed research records, cited by
-  the docs above
-- [.jev/README.md](.jev/README.md) — the repository's own design invariants, as
-  rules Jev enforces in an editor
-- [STATUS.md](STATUS.md) — where the project is, what is open, how to check it
-- [.omp/rules/](.omp/rules/) — the same conventions as stream rules, which steer
-  a model *while* it writes
+  research notes (local Mac models); not required for first run
+- [docs/history/](docs/history/README.md) — closed research records
+- [.jev/README.md](.jev/README.md) — design invariants as editor rules
+- [STATUS.md](STATUS.md) — open items and how to check them
 
 ## Install
 
@@ -80,27 +73,12 @@ export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
 clank -m 'reply with exactly: pong'    # -> pong, exit 0
 ```
 
-The built-in defaults (`http://127.0.0.1:40583/v1`, `qwen3.8-27b-gsq-rco-iq3xxs`)
-are one machine's. Those two variables plus the flags in
-[Configuration](#configuration) are the whole configuration: no config file, no
-state on disk. A model the server does not serve is the usual first failure, and
-it is not silent — the server's reason goes to stderr and the exit code is 1.
-Container instead of a toolchain: [In a container](#in-a-container).
-
-## Design
-
-The surface is stdin, stdout, stderr and an exit code. No daemon, no session
-store, no memory you did not hand over, so everything a persistent agent harness
-would do internally is a pipeline step you can read: `rg`, `git diff`, `jq`,
-`sed`, `xargs -P`. The input is visible (the context is exactly the pipe), the
-cost is visible (one call is one call, with no loop re-sending a growing
-history), and the write stays yours: clank observes and proposes, a gate
-decides, you apply. In a container with the tree mounted read-only that boundary
-belongs to the kernel rather than to clank's promises, and it bounds what the
-model can *write*, not what it can *reach*.
-
-What it does not give you: memory across sessions, retrieval you did not
-construct, or a loop that edits your code while you are away.
+Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`) yourself.
+Built-in defaults in the binary are a development convenience — treat a missing
+or dead endpoint as a loud failure (stderr + exit 1), not a silent hang. Those
+two variables plus the flags in [Configuration](#configuration) are the whole
+configuration: no config file, no state on disk. Container instead of a
+toolchain: [In a container](#in-a-container).
 
 ## What it is for
 
@@ -115,6 +93,29 @@ clank --json-schema @schema.json -m "extract the findings" | jq -er .
 clank --jsonl -m "summarize" | clank -m "what did you say?"
 clank --system @prompts/review-sh.md -c script.sh -m "review the script"
 ```
+
+## Keeping it fast
+
+**2026-09-22 one-shot** (same `opencode-go/glm-5.3-flash`, tools off): clank ~5
+MB / 0.75 s vs omp ~371 MB / 3.4 s, pi ~177 MB / 2.2 s, OpenCode ~562 MB / 5.7 s
+— pipe stage vs agent harness; dated record in
+[docs/history/clank-vs-agents-2026-09-22.md](docs/history/clank-vs-agents-2026-09-22.md).
+
+
+The model is the constraint (clank's own share is 1 ms of startup), so the lever
+is the tokens you pay for:
+
+| rule | measured |
+|---|---|
+| `--thinking off` for mechanical work | 1.35 s → 0.25 s |
+| keep the prompt head stable, vary the tail | 10.4 s → 0.21 s (cached prefix) |
+| stop reading when you have enough (`clank … \| head -1`) | 7.1 s → 0.6 s |
+| one call holding many items beats many small calls | 1.5× on four items |
+
+Per call: ≈0.25 s fixed, ≈0.02 s per output token, prompt tokens at 1.3 ms cold
+and 0.02 ms cached.
+[docs/history/research-harness-constraints.md](docs/history/research-harness-constraints.md)
+§5.2 has the raw numbers and §5.3 the comparison against headless pi.
 
 ## Unix contract
 
@@ -208,23 +209,6 @@ the exit code is `1` if any item failed, and an empty item list is not a
 failure. Everything except the trailing item block is byte-identical from item
 to item, which is what lets the server reuse the prompt prefix. There is no
 parallelism inside clank: `-P` belongs to `xargs`.
-
-## Keeping it fast
-
-The model is the constraint (clank's own share is 1 ms of startup), so the lever
-is the tokens you pay for:
-
-| rule | measured |
-|---|---|
-| `--thinking off` for mechanical work | 1.35 s → 0.25 s |
-| keep the prompt head stable, vary the tail | 10.4 s → 0.21 s (cached prefix) |
-| stop reading when you have enough (`clank … \| head -1`) | 7.1 s → 0.6 s |
-| one call holding many items beats many small calls | 1.5× on four items |
-
-Per call: ≈0.25 s fixed, ≈0.02 s per output token, prompt tokens at 1.3 ms cold
-and 0.02 ms cached.
-[docs/history/research-harness-constraints.md](docs/history/research-harness-constraints.md)
-§5.2 has the raw numbers and §5.3 the comparison against headless pi.
 
 ## Tools (`--tools`, opt-in)
 
@@ -393,40 +377,27 @@ the sandbox. `:ro` is not decoration: mounted read-only, `touch /w/pwned`
 returns `Read-only file system`. And not alpine: clank is glibc-dynamic, and
 musl has no loader for it; `ubuntu:24.04` and `debian:stable-slim` both work.
 
+## Design
+
+The surface is stdin, stdout, stderr and an exit code. No daemon, no session
+store, no memory you did not hand over, so everything a persistent agent harness
+would do internally is a pipeline step you can read: `rg`, `git diff`, `jq`,
+`sed`, `xargs -P`. The input is visible (the context is exactly the pipe), the
+cost is visible (one call is one call, with no loop re-sending a growing
+history), and the write stays yours: clank observes and proposes, a gate
+decides, you apply. In a container with the tree mounted read-only that boundary
+belongs to the kernel rather than to clank's promises, and it bounds what the
+model can *write*, not what it can *reach*.
+
+What it does not give you: memory across sessions, retrieval you did not
+construct, or a loop that edits your code while you are away.
+
 ## Verified
 
-Each claim was run; the dated record behind it, with the endpoint, model and
-quoted output, is in
-[docs/history/verification-log.md](docs/history/verification-log.md).
-
-- **Endpoints.** llama.cpp on `:40583` and `:37313`, a gateway on `:4000`, and
-  oMLX 0.7.0 on `:8000` serving three MLX models: streaming, tool calling and
-  reasoning channels on all of them; a fourth model the runtime refuses with a
-  409 that clank prints verbatim.
-- **`json_schema`.** Enforced by the server where it has been measured, not
-  guaranteed elsewhere: the gateway returned a fenced block and clank exited 1.
-  A schema and tools never share a request (400, curl-probed).
-- **The tools fallback.** A no-context question invented `src/renderer.ts:14` at
-  exit 0; with the observers offered, the same question answered
-  `src/context.rs:68` and cap `400`. A model that fabricates still fabricates —
-  the exit code and the two channels are what survive.
-- **`--thinking`.** `off` sends `chat_template_kwargs.enable_thinking=false`, a
-  level sends `reasoning_effort`, an unknown level is exit 2, and reasoning
-  reaches stderr only under `--show-thinking`.
-- **`cargo test`.** The real binaries against a stub server: one request by
-  default, the schema/tools split, the pipe as context, `--each` framing and
-  prefix sharing, failed items, truncation and emptiness as exit 1, argv
-  redaction, a trace as context. `tests/docs.rs` guards the docs against the
-  code; `tests/rules.rs` guards `.jev/rules`.
-- **`clank-jev`.** Hosted Jev (both watchdog questions ≥ 0.93, one request) and
-  a local `kev-0.6b` (16/18 typed decisions, 17% shuffled control, 83 ms, no
-  credentials).
-- **`demo.sh`.** Four gated stages end to end: 61 s on `:37313`, 35 s on
-  `Qwen3.5-9B-MLX-4bit`, and a different gate firing on each of the other two
-  models.
-- **Unexercised.** The schema-after-tools sequence against a live model, and the
-  TTY-with-no-prompt path.
-
+Dated endpoint/model/output records live in
+[docs/history/](docs/history/README.md) (and the verification log they cite). Do
+not read this README as a substitute for a `v*` release — tag when you want a
+shipped artifact; merge to `main` is not a release.
 
 ## Provenance
 
