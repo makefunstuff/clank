@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>clank</title>
+  <meta name="description" content="Minimal unix-style inference harness: prompt in, answer on stdout.">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>clank</h1>
+    <p class="warn">v0.1.0</p>
+  </header>
+
+  <p class="lede">Minimal unix-style inference harness. Prompt and context in on argv/stdin, answer on stdout, diagnostics on stderr, verdict in the exit code. Sibling binary <code>clank-jev</code> routes and gates. Not chat.</p>
+
+  <h2>Install</h2>
+  <p class="note">Package <code>clank-cli-app</code> → binaries <code>clank</code> / <code>clank-jev</code> (package ≠ binary). Never <code>cargo install clank</code> (unrelated crates.io crate).</p>
+  <pre><code>cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev</code></pre>
+  <p class="note">Fallback (pinable):</p>
+  <pre><code>cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0</code></pre>
+  <p class="note">Prebuilt archives (linux x86_64, macOS arm64/x86_64) are on the <a href="https://github.com/makefunstuff/clank/releases/tag/v0.1.0">v0.1.0 release</a>.</p>
+
+  <h2>30s smoke</h2>
+  <p class="note">After install, point at your OpenAI-compatible server and prove the pipe:</p>
+  <pre><code>export CLANK_BASE_URL=http://127.0.0.1:8080/v1
+export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
+clank -m 'reply with exactly: pong'    # -> pong, exit 0</code></pre>
+
+  <h2>Harness cost</h2>
+  <p class="note">2026-09-22 · <code>opencode-go/glm-5.3-flash</code> · tools off · prompt → <code>pong</code>. Pipe vs agent CLI on the same model, not “fastest AI.” Agent harness tax still shows with <code>--no-tools</code>.</p>
+  <ul>
+    <li><code>clank</code> · 0.75s · ~5MB</li>
+    <li><code>pi</code> · 2.2s · ~177MB</li>
+    <li><code>omp</code> · 3.4s · ~371MB</li>
+    <li><code>opencode</code> · 5.7s · ~562MB</li>
+  </ul>
+  <p class="note">Method and caveats: <a href="https://github.com/makefunstuff/clank/blob/main/docs/history/clank-vs-agents-2026-09-22.md">docs/history/clank-vs-agents-2026-09-22.md</a>.</p>
+
+  <h2>Docs</h2>
+  <ul class="links">
+    <li><a href="https://github.com/makefunstuff/clank">GitHub</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/blob/main/CHEATSHEET.md">Cheatsheet</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/blob/main/PROTOCOL.md">Protocol</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/blob/main/README.md">README</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/releases/tag/v0.1.0">Release v0.1.0</a></li>
+  </ul>
+</main>
+</body>
+</html>
