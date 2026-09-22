@@ -17,10 +17,10 @@
   <p class="lede">Minimal unix-style inference harness. Prompt and context in on argv/stdin, answer on stdout, diagnostics on stderr, verdict in the exit code. Sibling binary <code>clank-jev</code> routes and gates. Not chat.</p>
 
   <h2>Install</h2>
-  <p class="note">Primary until crates.io smoke PASSes (crate may 404):</p>
-  <pre><code>cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0</code></pre>
-  <p class="note">After crates.io publish: package <code>clank-cli-app</code> → binaries <code>clank</code> / <code>clank-jev</code> (package ≠ binary). Never <code>cargo install clank</code> (unrelated crate).</p>
+  <p class="note">Package <code>clank-cli-app</code> → binaries <code>clank</code> / <code>clank-jev</code> (package ≠ binary). Never <code>cargo install clank</code> (unrelated crates.io crate).</p>
   <pre><code>cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev</code></pre>
+  <p class="note">Fallback (pinable):</p>
+  <pre><code>cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0</code></pre>
   <p class="note">Prebuilt archives (linux x86_64, macOS arm64/x86_64) are on the <a href="https://github.com/makefunstuff/clank/releases/tag/v0.1.0">v0.1.0 release</a>.</p>
 
   <h2>First run</h2>
