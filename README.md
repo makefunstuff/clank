@@ -5,13 +5,6 @@ the answer on stdout, diagnostics on stderr, a verdict in the exit code. Speaks
 to any OpenAI-compatible endpoint. Sibling binary `clank-jev` routes and gates;
 compose them — do not fold chat/agent UX into `clank`.
 
-```sh
-cargo build --release
-export CLANK_BASE_URL=http://127.0.0.1:8080/v1   # your server — no laptop-only default
-export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
-./target/release/clank -m 'reply with exactly: pong'    # -> pong, exit 0
-```
-
 ![clank in a shell](docs/images/clank-demo.gif)
 
 Recorded against a live server by `scripts/record-demo.sh`: observers, pipe as
@@ -86,6 +79,16 @@ two variables plus the flags in [Configuration](#configuration) are the whole
 configuration: no config file, no state on disk. Container instead of a
 toolchain: [In a container](#in-a-container).
 
+
+## 30s smoke
+
+After install, point at your OpenAI-compatible server and prove the pipe:
+
+```sh
+export CLANK_BASE_URL=http://127.0.0.1:8080/v1
+export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
+clank -m 'reply with exactly: pong'    # -> pong, exit 0
+```
 
 ## Harness cost (dated)
 
