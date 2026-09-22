@@ -38,8 +38,7 @@ export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
 clank -m 'reply with exactly: pong'    # -> pong, exit 0
 ```
 
-Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`) yourself. A
-dead endpoint should fail loud (stderr + exit 1), not hang.
+Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`) yourself.
 
 ## Harness cost (dated)
 
@@ -70,11 +69,6 @@ Token knobs (`--thinking off`, lower `--max-tokens`, `--no-tools` when piped):
 | [docs/use-cases.md](docs/use-cases.md) | job families, gates, prices |
 | [docs/clank-jev.md](docs/clank-jev.md) | typed routing decisions |
 | [docs/history/](docs/history/README.md) | dated measures and closed research |
-| [STATUS.md](STATUS.md) | open items |
-| [.jev/README.md](.jev/README.md) | repo rules for the editor |
-
-Local hooks (optional): `git config core.hooksPath .githooks` — see CHEATSHEET /
-STATUS for pre-commit / soft pre-push jev.
 
 
 JSONL event kinds (`--jsonl`): `run`, `item`, `tool_call`, `tool_result`,
