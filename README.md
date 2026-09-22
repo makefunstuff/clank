@@ -29,24 +29,22 @@ context, `--each`, schema through `jq`, failure with reason and `exit 1`.
 
 ## Install
 
-**Install line 1 (until crates.io smoke PASSes):** git tag — do not lead with
-`cargo install clank-cli-app` while the crate may 404.
+**Install line 1:** package `clank-cli-app` → binaries `clank` and `clank-jev`
+(package ≠ binary). Never `cargo install clank` — that crates.io name is an
+unrelated project.
+
+```sh
+cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev
+```
+
+Git fallback (pin a tag):
 
 ```sh
 cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
-# -> ~/.cargo/bin/clank and clank-jev
 ```
 
-After crates.io has `clank-cli-app` (manual Actions dispatch `publish_crates_io`,
-not auto on tag):
-
-```sh
-cargo install clank-cli-app --locked   # package ≠ binary; runs as clank / clank-jev
-```
-
-Never `cargo install clank` — that crates.io name is an unrelated project. Six
-direct dependencies, and nothing system-provided beyond a C compiler (`ring`,
-for TLS; no OpenSSL to find).
+Six direct dependencies, and nothing system-provided beyond a C compiler
+(`ring`, for TLS; no OpenSSL to find).
 
 Prebuilt archives are attached to each
 [release](https://github.com/makefunstuff/clank/releases) — linux x86_64, macOS
