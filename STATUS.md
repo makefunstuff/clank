@@ -59,11 +59,11 @@ says where the project is, what is open, and how to check any of it.
   network. `tests/wire.rs` (24, the protocol), `tests/jev.rs` (10, the sibling),
   `tests/docs.rs` (6, docs vs code), `tests/rules.rs` (3, the rules themselves),
   plus 38 unit tests in `src/`.
-- CI on every push and pull request: warnings are errors, `cargo test` (including
-  `tests/jev_ci_stub.rs`, which drives `clank-jev` against a local stub — no
-  secret and no provider), and the docs wrapping check. Release on a `v*` tag: three
-  native targets, each archive smoke-tested before it is attached, published
-  only when all of them are up.
+- CI on every push and pull request: warnings are errors, `cargo test`
+  (including `tests/jev_ci_stub.rs`, which drives `clank-jev` against a local
+  stub — no secret and no provider), and the docs wrapping check. Release on a
+  `v*` tag: three native targets, each archive smoke-tested before it is
+  attached, published only when all of them are up.
 - `.jev/rules/` holds 26 rules, in three groups: the contract's invariants, the
   taste the code is held to (weightless code, needless abstraction, avoidable
   copies, silent fallbacks, a value with two homes, comments that restate the
