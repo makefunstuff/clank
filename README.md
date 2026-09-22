@@ -96,6 +96,9 @@ clank --system @prompts/review-sh.md -c script.sh -m "review the script"
 
 ## Keeping it fast
 
+**2026-09-22 one-shot** (same `opencode-go/glm-5.3-flash`, tools off): clank ~5 MB / 0.75 s vs omp ~371 MB / 3.4 s, pi ~177 MB / 2.2 s, OpenCode ~562 MB / 5.7 s — pipe stage vs agent harness; dated record in [docs/history/clank-vs-agents-2026-09-22.md](docs/history/clank-vs-agents-2026-09-22.md).
+
+
 The model is the constraint (clank's own share is 1 ms of startup), so the lever
 is the tokens you pay for:
 
