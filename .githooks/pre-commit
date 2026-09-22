@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# The fast gate. The two suites here read this repository's own words: the docs
+# against the binary's surface (tests/docs.rs) and the request/response shapes
+# on the wire (tests/wire.rs). The rest of the suite is CI's, or the caller's.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+cargo test --locked --test docs --test wire

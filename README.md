@@ -311,6 +311,37 @@ defaults:
 | `--max-rounds` | — | 12 tool rounds per prompt (with `--tools`) |
 | `--jsonl`, `-q`/`--quiet`, `-h`/`--help` | — | — |
 
+## The repository's own gates
+
+`.githooks/` holds the two hooks this repository runs locally. They are enabled
+once per clone, since `core.hooksPath` is per-repository configuration:
+
+```sh
+git config core.hooksPath .githooks
+```
+
+`pre-commit` runs `cargo test --locked --test docs --test wire` and fails hard.
+The docs must still match the binaries' own `--help` and event list, and the
+request and response shapes must still hold; everything else is CI's or the
+caller's.
+
+`pre-push` asks `clank-jev` two questions about the pushed range — does the
+message describe the diff, and what shape is its subject line — using
+`fixtures/checks-commit.json` with `--min-prob 0.7` and a 30 s timeout. Only a
+gate that ran and failed stops the push. It is soft without a model: with no
+`TYPESAFE_API_KEY`/`OPENROUTER_API_KEY` and no local `kev` listening on
+127.0.0.1:8009 it prints one warning and exits 0, as it does when the binary is
+missing, the endpoint cannot be reached, or nothing in `src/` or the reference
+docs is being pushed.
+
+CI covers the same wiring with no secret: `tests/jev_ci_stub.rs` runs
+`scripts/jev-ci-stub.sh`, which starts a stub System One endpoint on 127.0.0.1:0
+(`scripts/jev-stub.py` — the `Stub` in `tests/jev.rs` as a script) and drives
+the real binary against it. The checks file is `fixtures/checks-commit.json`,
+asked at `--min-prob 0.7` (exit 0) and then at 0.99 (exit 1), so the run covers
+the gate as well as the request. No key is read and no provider is called. The
+same script is what a dedicated `jev gate (stub, no secrets)` job would call.
+
 ## Demo
 
 `demo.sh` is the reference pipeline. Stage 1 writes a script that renders

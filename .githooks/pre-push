@@ -1,0 +1,78 @@
+#!/usr/bin/env bash
+# The soft jev gate. Ask the decision model two things about the pushed range:
+# does the commit message describe the diff (fixtures/checks-commit.json), and
+# what shape is its subject line. Soft means missing credentials, a missing
+# binary, an unreachable endpoint or a usage error are one warning and a clean
+# exit; only a gate that ran and failed (exit 1) stops the push.
+#
+# Enable once per clone:
+#   git config core.hooksPath .githooks
+#
+# git hands pre-push "<local ref> <local sha> <remote ref> <remote sha>" lines
+# on stdin. The push is read from the first line; a delete (all-zero local) and
+# a run with nothing on stdin are both nothing to decide about.
+set -uo pipefail
+
+warn() { echo "pre-push: $*" >&2; }
+
+root=$(git rev-parse --show-toplevel 2>/dev/null) || { warn 'not a git work tree'; exit 0; }
+cd "$root" || exit 0
+
+# Which route a decision would take. A local kev needs no credential, so a
+# reachable 127.0.0.1:8009 is enough on its own; otherwise a key names the
+# provider. Nothing here is fatal — the hook is advisory without one.
+provider=''
+if (exec 3<>/dev/tcp/127.0.0.1/8009) 2>/dev/null; then
+    provider=kev
+elif [ -n "${TYPESAFE_API_KEY:-}${JEV_API_KEY:-}${JEV_CLI_API_KEY:-}" ]; then
+    provider=typesafe
+elif [ -n "${OPENROUTER_API_KEY:-}" ]; then
+    provider=openrouter
+else
+    warn 'no jev credentials and no local kev on 127.0.0.1:8009 — skipping the decision gate'
+    exit 0
+fi
+
+base=''
+tip=''
+while read -r _local_ref local_oid _remote_ref remote_oid; do
+    case "$local_oid" in '' | 0000000000000000000000000000000000000000) continue ;; esac
+    case "$remote_oid" in
+        '' | 0000000000000000000000000000000000000000)
+            # A new branch: the diff it adds is what is not already on main.
+            base=$(git merge-base "$local_oid" origin/main 2>/dev/null || true)
+            ;;
+        *) base=$remote_oid ;;
+    esac
+    tip=$local_oid
+    break
+done
+
+[ -n "$tip" ] || { warn 'nothing to push — skipping the decision gate'; exit 0; }
+[ -n "$base" ] || { warn 'cannot tell what the push adds — skipping the decision gate'; exit 0; }
+
+scope=$(git diff --name-only "$base" "$tip" -- src README.md PROTOCOL.md CHEATSHEET.md) || exit 0
+[ -n "$scope" ] || { warn 'nothing in src/ or the reference docs — skipping the decision gate'; exit 0; }
+
+bin=target/debug/clank-jev
+if [ ! -x "$bin" ]; then
+    if ! cargo build -q --bin clank-jev; then
+        warn 'clank-jev is not built and could not be built — skipping the decision gate'
+        exit 0
+    fi
+fi
+
+# The state is the message plus the diff, capped so a large push still fits one
+# request; the message is written first so the cap can only ever cut the diff.
+{
+    printf 'MESSAGE:\n%s\nDIFF:\n' "$(git log -1 --format=%B "$tip")"
+    git diff --no-color "$base" "$tip" -- src README.md PROTOCOL.md CHEATSHEET.md
+} | head -c 60000 | "$bin" --checks fixtures/checks-commit.json --provider "$provider" \
+    --min-prob 0.7 --timeout 30 --quiet
+code=${PIPESTATUS[2]}
+
+case "$code" in
+    0) exit 0 ;;
+    1) warn 'the jev gate failed: the pushed message or diff did not clear --min-prob 0.7'; exit 1 ;;
+    *) warn "the decision could not be made (clank-jev exit $code) — not blocking the push"; exit 0 ;;
+esac
