@@ -76,6 +76,10 @@ Token knobs (`--thinking off`, lower `--max-tokens`, `--no-tools` when piped):
 Local hooks (optional): `git config core.hooksPath .githooks` — see CHEATSHEET /
 STATUS for pre-commit / soft pre-push jev.
 
+
+JSONL event kinds (`--jsonl`): `run`, `item`, `tool_call`, `tool_result`,
+`assistant`, `error`. See [PROTOCOL.md](PROTOCOL.md).
+
 ## Flags (index)
 
 Meanings live in [CHEATSHEET.md](CHEATSHEET.md). Listed so the surface stays
