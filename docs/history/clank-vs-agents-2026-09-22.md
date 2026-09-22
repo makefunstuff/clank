@@ -1,10 +1,10 @@
 # 4-way QA bench: clank vs omp vs pi vs opencode
 
-**When:** 2026-09-22 ~12:28–12:38 EEST  
-**Box:** Linux, ~15 GiB RAM (idle OpenCode TUIs left alone; ~2.5 GiB RSS already resident)  
-**Prompt:** `reply with exactly: pong` → all four answered `pong`  
-**Evidence:** `QA workspace `clank-qa-bench/` (local)`  
-**Measurement:** `run_measure.py` (wall + peak RSS via `/proc`, stdin=`DEVNULL`)
+**When:** 2026-09-22 ~12:28–12:38 EEST **Box:** Linux, ~15 GiB RAM (idle
+OpenCode TUIs left alone; ~2.5 GiB RSS already resident) **Prompt:**
+`reply with exactly: pong` → all four answered `pong` **Evidence:**
+`QA workspace `clank-qa-bench/` (local)` **Measurement:** `run_measure.py` (wall
++ peak RSS via `/proc`, stdin=`DEVNULL`)
 
 ## Model IDs used (same Go wire)
 
@@ -54,13 +54,25 @@ No fake same-provider: all four hit **OpenCode Go / glm-5.3-flash**.
 
 ## Caveats (read before quoting)
 
-1. **Agent harness vs pipe:** clank is a minimal OpenAI-compatible client. omp / pi / opencode are coding-agent CLIs (system prompts, session machinery, node/bun runtime) even with tools disabled — expect tens–hundreds of MB RSS and multi-second cold paths.
-2. **Same model, different clients:** wall time includes client startup + network; model latency is shared-ish but not isolated.
-3. **Go session header:** clank cannot set custom headers → local proxy. pi needed `models.json` header override for the same reason. omp and opencode speak Go natively.
-4. **`--thinking off`:** used on omp/pi; **omitted** on clank→Go (upstream unknown-field 400). opencode `--pure` path as prior.
-5. **Idle OpenCode TUIs** (~604–759 MB ×4) were **not** killed; they inflate box pressure but were excluded from one-shot RSS (measured process trees only).
-6. **opencode token tax (prior):** ~7.5k input tokens for “pong” in JSON traces; clank/curl path is tens of tokens. Not re-measured for omp/pi JSON this pass.
-7. **pi catalog gap:** without the temporary `models.json`, `pi --list-models` had no `glm-5.3-flash` under `opencode-go`, and bare Go calls 400. Fallback that *would* work without headers: `openrouter/z-ai/glm-4.7-flash` (smoke only; **not** used in the table).
+1. **Agent harness vs pipe:** clank is a minimal OpenAI-compatible client. omp /
+   pi / opencode are coding-agent CLIs (system prompts, session machinery,
+   node/bun runtime) even with tools disabled — expect tens–hundreds of MB RSS
+   and multi-second cold paths.
+2. **Same model, different clients:** wall time includes client startup +
+   network; model latency is shared-ish but not isolated.
+3. **Go session header:** clank cannot set custom headers → local proxy. pi
+   needed `models.json` header override for the same reason. omp and opencode
+   speak Go natively.
+4. **`--thinking off`:** used on omp/pi; **omitted** on clank→Go (upstream
+   unknown-field 400). opencode `--pure` path as prior.
+5. **Idle OpenCode TUIs** (~604–759 MB ×4) were **not** killed; they inflate box
+   pressure but were excluded from one-shot RSS (measured process trees only).
+6. **opencode token tax (prior):** ~7.5k input tokens for “pong” in JSON traces;
+   clank/curl path is tens of tokens. Not re-measured for omp/pi JSON this pass.
+7. **pi catalog gap:** without the temporary `models.json`, `pi --list-models`
+   had no `glm-5.3-flash` under `opencode-go`, and bare Go calls 400. Fallback
+   that *would* work without headers: `openrouter/z-ai/glm-4.7-flash` (smoke
+   only; **not** used in the table).
 
 ## Commands (repro)
 
@@ -82,8 +94,12 @@ python3 run_measure.py opencode-runN opencode run --pure --format json \
 
 ## Blunt ranking (this tiny prompt)
 
-- **RSS:** clank (~5 MB) ≪ pi (~177 MB) < omp (~371 MB) < opencode (~562 MB).
-- **Wall (median):** clank (~0.75 s) < pi (~2.2 s) < omp (~3.4 s) < opencode (~5.7 s).
-- **Disk:** clank 6.4 MB binary vs agent install trees of ~200–700 MB (+ omp natives ~347 MB).
+- **RSS:** clank (~5 MB) ≪ pi (~177 MB) < omp (~371 MB) < opencode (~562 MB).
+- **Wall (median):** clank (~0.75 s) < pi (~2.2 s) < omp (~3.4 s) < opencode
+  (~5.7 s).
+- **Disk:** clank 6.4 MB binary vs agent install trees of ~200–700 MB (+ omp
+  natives ~347 MB).
 
-Use **clank** for scripts/pipes/CI; use **omp/pi/opencode** when you want the agent product. Fix clank’s custom-header gap (or native Go session) to drop the proxy crutch.
+Use **clank** for scripts/pipes/CI; use **omp/pi/opencode** when you want the
+agent product. Fix clank’s custom-header gap (or native Go session) to drop the
+proxy crutch.
