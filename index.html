@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>clank</title>
+  <meta name="description" content="Minimal unix-style inference harness: prompt in, answer on stdout.">
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+<main>
+  <header class="top">
+    <h1>clank</h1>
+    <p class="warn">v0.1.0</p>
+  </header>
+
+  <p class="lede">Minimal unix-style inference harness. Prompt and context in on argv/stdin, answer on stdout, diagnostics on stderr, verdict in the exit code. Sibling binary <code>clank-jev</code> routes and gates. Not chat.</p>
+
+  <h2>Install</h2>
+  <p class="note">Package <code>clank-cli-app</code> → binaries <code>clank</code> and <code>clank-jev</code> (package ≠ binary). The crates.io crate named <code>clank</code> is unrelated — never <code>cargo install clank</code>.</p>
+  <pre><code>cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev</code></pre>
+  <p class="note">Until crates.io publish lands, or as a pinable fallback:</p>
+  <pre><code>cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0</code></pre>
+  <p class="note">Prebuilt archives (linux x86_64, macOS arm64/x86_64) are on the <a href="https://github.com/makefunstuff/clank/releases/tag/v0.1.0">v0.1.0 release</a>.</p>
+
+  <h2>First run</h2>
+  <pre><code>export CLANK_BASE_URL=http://127.0.0.1:8080/v1
+export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
+clank -m 'reply with exactly: pong'    # -> pong, exit 0</code></pre>
+  <p class="note">Needs an OpenAI-compatible endpoint with tool calling. Set <code>CLANK_BASE_URL</code> and <code>CLANK_MODEL</code> yourself.</p>
+
+  <h2>Docs</h2>
+  <ul class="links">
+    <li><a href="https://github.com/makefunstuff/clank">GitHub</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/blob/main/CHEATSHEET.md">Cheatsheet</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/blob/main/PROTOCOL.md">Protocol</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/blob/main/README.md">README</a></li>
+    <li><a href="https://github.com/makefunstuff/clank/releases/tag/v0.1.0">Release v0.1.0</a></li>
+  </ul>
+</main>
+</body>
+</html>
