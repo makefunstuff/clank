@@ -18,8 +18,9 @@ on a laptop-only built-in default — point at your OpenAI-compatible server.
 ## Install
 
 ```sh
-cargo install clank-cli-app --locked   # package name; runs as clank / clank-jev
-# fallback: cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
+# primary until crates.io smoke PASSes:
+cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
+# after publish: cargo install clank-cli-app --locked  # package ≠ binary → clank / clank-jev
 ```
 
 Never `cargo install clank` (unrelated crates.io crate).
