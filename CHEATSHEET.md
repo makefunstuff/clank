@@ -64,6 +64,15 @@ if they were the same product — pipe stage vs agent harness.
 you `-c` / shell-read content into the prompt. Warn once per run when coding
 adds it; until then, compose with `cat`/`rg` yourself.
 
+## Web
+
+`clank` has no web tool (local observers only). Compose:
+
+```sh
+curl -sL 'https://example.com/page' | clank --thinking off -m 'summarize; cite quotes'
+# planned sibling: clank-web "query" | clank -m "…"   # providers via .clank/config.toml
+```
+
 ## One-liners
 
 ```sh
