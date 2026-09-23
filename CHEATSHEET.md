@@ -235,3 +235,32 @@ herdr agent prompt <TARGET> "review the diff in src/" --wait
 
 `pane run` sends the text and an Enter; there is no `pane wait-output`. For
 agent panes, wait with `herdr agent wait <TARGET> --until <status>`.
+
+## Troubleshooting
+
+**Connection refused, or cannot reach `CLANK_BASE_URL`.** stderr is
+`request to <url>/chat/completions failed: …` and the exit code is 1. The
+server process is down, or the URL is missing the `/v1` path (`clank` appends
+`/chat/completions`).
+
+```sh
+curl -sf "$CLANK_BASE_URL/models"    # HTTP 200, JSON body
+# CLANK_BASE_URL=http://127.0.0.1:8080/v1
+```
+
+**Model not found, or the models list is empty.** A bad id comes back as
+`model returned HTTP <status>: …` (exit 1). Set `CLANK_MODEL` from
+`GET /v1/models`:
+
+```sh
+curl -s "$CLANK_BASE_URL/models" | jq -r '.data[].id'
+export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
+```
+
+An empty `.data` array means the server answered and has no model loaded.
+
+**Never `cargo install clank`.** That crates.io name is unrelated. Use:
+
+```sh
+cargo install clank-cli-app --locked
+```
