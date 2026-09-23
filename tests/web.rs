@@ -160,7 +160,7 @@ fn a_brave_search_prints_jsonl_and_sends_the_token_header() {
     let dir = Tmp::new();
     let (stdout, stderr, code) = run(
         dir.path(),
-        &["--provider", "brave", "--base-url", &stub.url, "--max-results", "2", "hello web"],
+        &["--provider", "brave", "--base-url", &stub.url, "--limit", "2", "hello web"],
         &[("BRAVE_API_KEY", "test-key")],
         None,
     );
@@ -206,7 +206,7 @@ fn a_tavily_search_posts_the_query_and_not_the_key() {
     let dir = Tmp::new();
     let (stdout, stderr, code) = run(
         dir.path(),
-        &["--provider", "tavily", "--base-url", &stub.url, "--text", "widgets"],
+        &["--provider", "tavily", "--base-url", &stub.url, "--format", "text", "widgets"],
         &[("TAVILY_API_KEY", "tvly-test")],
         None,
     );
@@ -254,15 +254,11 @@ fn a_missing_key_is_exit_1_and_usage_is_exit_2() {
     assert!(stderr.contains("empty query"), "{stderr}");
     assert!(stdout.is_empty());
 
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["q"],
-        &[("BRAVE_API_KEY", "a"), ("TAVILY_API_KEY", "b")],
-        None,
-    );
-    assert_eq!(code, 2, "{stderr}");
+    let (stdout, stderr, code) = run(dir.path(), &["q"], &[("TAVILY_API_KEY", "tavily-secret-value")], None);
+    assert_eq!(code, 1, "{stderr}");
     assert!(stdout.is_empty(), "{stdout}");
-    assert!(stderr.contains("--provider"), "{stderr}");
+    assert!(stderr.contains("BRAVE_API_KEY"), "{stderr}");
+    assert!(!stderr.contains("tavily-secret-value"), "the unused key stays off stderr: {stderr}");
 }
 
 #[test]
@@ -297,11 +293,15 @@ fn the_config_file_names_the_provider_the_cap_and_the_env_var() {
         {"title": "C", "url": "https://c.example", "description": "cfg"}
     ]}}).to_string());
     let dir = Tmp::new();
-    let cfg = dir.path().join("web.toml");
-    std::fs::write(&cfg, "provider = \"brave\"\nmax_results = 4\n\n[brave]\napi_key_env = \"CLANK_WEB_TEST_KEY\"\n").unwrap();
+    std::fs::create_dir(dir.path().join(".clank")).unwrap();
+    std::fs::write(
+        dir.path().join(".clank/config.toml"),
+        "[web]\ndefault_provider = \"brave\"\nlimit = 4\n\n[web.brave]\napi_key_env = \"CLANK_WEB_TEST_KEY\"\n",
+    )
+    .unwrap();
     let (stdout, stderr, code) = run(
         dir.path(),
-        &["--config", cfg.to_str().unwrap(), "--base-url", &stub.url, "configured"],
+        &["--base-url", &stub.url, "configured"],
         &[("CLANK_WEB_TEST_KEY", "from-env"), ("BRAVE_API_KEY", "not-this")],
         None,
     );
@@ -350,20 +350,27 @@ fn fetch_strips_html_and_a_short_cap_marks_the_line_truncated() {
     assert!(!hit["snippet"].as_str().unwrap().contains("secret"), "{hit}");
     assert!(hit.get("truncated").is_none());
 
-    let stub = Stub::start(200, "text/html", html);
-    let (stdout, stderr, code) = run(dir.path(), &["--fetch", &stub.url, "--max-bytes", "24", "--quiet"], &[], None);
+    let mut big = String::from("<html><head><title>Big</title></head><body>");
+    big.push_str(&"x".repeat(512 * 1024));
+    big.push_str("</body></html>");
+    let stub = Stub::start(200, "text/html", &big);
+    let (stdout, stderr, code) = run(dir.path(), &["--fetch", &stub.url, "--quiet"], &[], None);
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(lines(&stdout)[0]["truncated"], true);
     assert!(stderr.contains("truncated"), "{stderr}");
 }
 
 #[test]
-fn clank_sources_do_not_mention_the_web_config() {
+fn clank_tools_stay_on_the_local_filesystem() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-    for rel in ["src/main.rs", "src/tools.rs", "src/client.rs", "src/context.rs"] {
+    let tools = std::fs::read_to_string(root.join("src/tools.rs")).unwrap();
+    assert!(!tools.contains("clank-web"), "a web search is not a clank tool");
+    assert!(!tools.contains("brave"));
+    assert!(!tools.contains("tavily"));
+    assert!(!tools.contains("config.toml"));
+    for rel in ["src/client.rs", "src/context.rs"] {
         let text = std::fs::read_to_string(root.join(rel)).unwrap();
-        assert!(!text.contains("config.toml"), "{rel}");
-        assert!(!text.contains(".clank"), "{rel}");
         assert!(!text.contains("clank-web"), "{rel}");
+        assert!(!text.contains("brave"), "{rel}");
     }
 }

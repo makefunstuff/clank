@@ -12,7 +12,7 @@
         "question": "Is this a network destination other than the configurable base URL — a hardcoded host clank would reach without the caller asking for it?",
         "criteria": {
           "true": "it is a second destination, or a URL that is not the base URL the caller can override",
-          "false": "it is the default chat endpoint (which `--base-url` and `CLANK_BASE_URL` replace), one of the provider endpoints inside `src/jev.rs` or `src/web.rs` whose whole job is that protocol and which `--base-url` replaces, a doc comment, or a string that is never requested"
+          "false": "clank has no hardcoded chat host: the caller sets `--base-url`, `CLANK_BASE_URL`, or `[clank].base_url`. Provider endpoints inside `src/jev.rs` or `src/web.rs` are that binary's protocol and `--base-url` replaces them. A doc comment or a string that is never requested is not a destination"
         },
         "min_probability": 0.8
       },

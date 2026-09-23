@@ -7,36 +7,36 @@
 //! clank-web "query" | clank -m "summarize with citations"
 //! ```
 //!
-//! stdout is JSONL (`title`, `url`, `snippet`), or `--text` lines of
+//! stdout is JSONL (`title`, `url`, `snippet`), or `--format text` lines of
 //! `title<TAB>url<TAB>snippet`. stderr is diagnostics. Exit `0` when the
 //! results were written, including an empty set; `1` when the search or fetch
 //! did not complete; `2` for usage.
 //!
-//! `.clank/config.toml` in the working directory is read here and nowhere else
-//! in the crate. It names the provider, the result cap, and the environment
-//! variable that holds the key. The key itself is never a file or a flag.
+//! Optional `.clank/config.toml` (walked up from the working directory) supplies
+//! `[web]`: the default provider, the result cap, the output format, and the
+//! environment variable that holds each key. `[clank]` in that file is the chat
+//! endpoint and is ignored here. A missing file leaves Brave, five results, and
+//! JSONL in charge. The key itself is never an argument, and it is never printed.
 //!
 //! One request per invocation. `--fetch` is one GET of one URL: no JavaScript,
 //! no crawl, no second request that follows a link the page named.
 
+mod config;
+
 use clap::Parser;
-use serde::Deserialize;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
-use std::path::Path;
 use std::time::{Duration, Instant};
 
 const BRAVE_ENDPOINT: &str = "https://api.search.brave.com/res/v1/web/search";
 const TAVILY_ENDPOINT: &str = "https://api.tavily.com/search";
 const DEFAULT_BRAVE_KEY_ENV: &str = "BRAVE_API_KEY";
 const DEFAULT_TAVILY_KEY_ENV: &str = "TAVILY_API_KEY";
-const DEFAULT_CONFIG_PATH: &str = ".clank/config.toml";
-const DEFAULT_MAX_RESULTS: u32 = 5;
+const DEFAULT_LIMIT: u32 = 5;
 /// Brave's `count` and Tavily's `max_results` both stop at 20.
-const MAX_RESULTS_LIMIT: u32 = 20;
+const LIMIT_MAX: u32 = 20;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
-const DEFAULT_FETCH_BYTES: usize = 512 * 1024;
-const FETCH_BYTES_LIMIT: usize = 8 * 1024 * 1024;
+const FETCH_BYTES: usize = 512 * 1024;
 /// A search response larger than this is not a result set.
 const SEARCH_BODY_CAP: usize = 2 * 1024 * 1024;
 
@@ -53,25 +53,27 @@ const USAGE: i32 = 2;
       clank-web \"rust sigpipe\" | clank -m \"summarize with citations\"\n  \
       printf '%s\\n' \"$query\" | clank-web\n  \
       clank-web --fetch https://example.com | clank -m \"what is this page?\"\n\n\
-      Config: .clank/config.toml in the working directory (see .clank/config.example.toml).\n\
-      clank does not read that file. Keys come from the environment."
+      Config: .clank/config.toml, walked up from the working directory.\n\
+      [web] is for this binary. [clank] is for clank and clank-jev, and is ignored here.\n\
+      Precedence: flags, then the environment, then the file, then built-ins.\n\
+      A missing file is not an error. Keys come from the environment."
 )]
 struct Args {
     /// search query; otherwise the query is read from stdin
     #[arg(value_name = "QUERY", conflicts_with = "fetch")]
     query: Option<String>,
 
-    /// provider: brave or tavily; otherwise .clank/config.toml, otherwise the one key that is set
+    /// provider: brave (default) or tavily
     #[arg(long, value_name = "NAME", conflicts_with = "fetch")]
     provider: Option<String>,
 
-    /// results to request, 1..=20; overrides max_results in the config
+    /// results to request, 1..=20 (default 5)
     #[arg(long, value_name = "N", conflicts_with = "fetch")]
-    max_results: Option<u32>,
+    limit: Option<u32>,
 
-    /// config file; default is .clank/config.toml in the working directory, if it exists
-    #[arg(long, value_name = "PATH")]
-    config: Option<String>,
+    /// jsonl (default) or text (`title<TAB>url<TAB>snippet`)
+    #[arg(long, value_name = "jsonl|text")]
+    format: Option<String>,
 
     /// replaces the provider endpoint, for a proxy or a stub
     #[arg(long, value_name = "URL", conflicts_with = "fetch")]
@@ -81,17 +83,9 @@ struct Args {
     #[arg(long, value_name = "URL")]
     fetch: Option<String>,
 
-    /// cap on the fetched body, bytes (default 524288, max 8388608)
-    #[arg(long, value_name = "N")]
-    max_bytes: Option<usize>,
-
     /// per-request timeout, seconds
     #[arg(long, value_name = "SECS", default_value_t = DEFAULT_TIMEOUT_SECS)]
     timeout: u64,
-
-    /// print `title<TAB>url<TAB>snippet` instead of JSONL
-    #[arg(long)]
-    text: bool,
 
     /// suppress the result-count line on stderr
     #[arg(short, long)]
@@ -140,29 +134,8 @@ struct Hit {
     title: String,
     url: String,
     snippet: String,
-    /// Set on a fetched page whose body was cut at `--max-bytes`.
+    /// Set on a fetched page whose body was cut at the fetch cap.
     truncated: bool,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(default, deny_unknown_fields)]
-struct FileConfig {
-    provider: Option<String>,
-    max_results: Option<u32>,
-    brave: Option<KeyEnv>,
-    tavily: Option<KeyEnv>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(default, deny_unknown_fields)]
-struct KeyEnv {
-    api_key_env: Option<String>,
-}
-
-struct Loaded {
-    config: FileConfig,
-    /// Set when a file was actually read, so a missing key can name it.
-    path: Option<String>,
 }
 
 #[derive(Debug)]
@@ -170,154 +143,70 @@ struct Resolved {
     provider: Provider,
     endpoint: String,
     api_key: String,
-    max_results: u32,
-}
-
-fn valid_env_name(name: &str) -> bool {
-    let mut chars = name.chars();
-    match chars.next() {
-        Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
-        _ => return false,
-    }
-    name.len() <= 128 && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+    limit: u32,
+    text: bool,
 }
 
 fn http_url(url: &str) -> bool {
-    let Some(rest) = url.strip_prefix("https://").or_else(|| url.strip_prefix("http://")) else {
-        return false;
-    };
-    let host = rest.split(['/', '?', '#']).next().unwrap_or("");
-    !host.is_empty()
+    config::http_url(url)
 }
 
-fn parse_config(text: &str) -> Result<FileConfig, String> {
-    let cfg: FileConfig = toml::from_str(text).map_err(|e| {
-        let msg = e.to_string();
-        if msg.contains("unknown field `api_key`") {
-            format!("{msg}; a key is not stored in this file — api_key_env names the environment variable")
-        } else {
-            msg
-        }
-    })?;
-    if let Some(name) = cfg.provider.as_deref() {
-        if Provider::parse(name).is_none() {
-            return Err(format!("unknown provider {name:?} (brave, tavily)"));
-        }
-    }
-    if let Some(n) = cfg.max_results {
-        if !(1..=MAX_RESULTS_LIMIT).contains(&n) {
-            return Err(format!("max_results {n} is outside 1..={MAX_RESULTS_LIMIT}"));
-        }
-    }
-    for (label, section) in [("brave", &cfg.brave), ("tavily", &cfg.tavily)] {
-        if let Some(env) = section.as_ref().and_then(|s| s.api_key_env.as_deref()) {
-            if !valid_env_name(env) {
-                return Err(format!("{label}.api_key_env {env:?} is not an environment variable name"));
-            }
-        }
-    }
-    Ok(cfg)
-}
-
-fn load_config(path: Option<&str>) -> Result<Loaded, (String, i32)> {
-    let (text, origin) = match path {
-        Some(p) => {
-            let text = std::fs::read_to_string(p).map_err(|e| (format!("reading --config {p}: {e}"), USAGE))?;
-            (text, Some(p.to_string()))
-        }
-        None => {
-            if !Path::new(DEFAULT_CONFIG_PATH).is_file() {
-                return Ok(Loaded { config: FileConfig::default(), path: None });
-            }
-            let text = std::fs::read_to_string(DEFAULT_CONFIG_PATH)
-                .map_err(|e| (format!("reading {DEFAULT_CONFIG_PATH}: {e}"), USAGE))?;
-            (text, Some(DEFAULT_CONFIG_PATH.to_string()))
-        }
-    };
-    match parse_config(&text) {
-        Ok(config) => Ok(Loaded { config, path: origin }),
-        Err(e) => Err((format!("{}: {e}", origin.unwrap_or_default()), USAGE)),
+fn section_keys(web: &config::Web, provider: Provider) -> &config::ProviderKeys {
+    match provider {
+        Provider::Brave => &web.brave,
+        Provider::Tavily => &web.tavily,
     }
 }
 
-/// The env var the provider's key is read from, and whether the file named it.
-fn key_env<'a>(config: &'a FileConfig, provider: Provider) -> (&'a str, bool) {
-    let custom = match provider {
-        Provider::Brave => config.brave.as_ref().and_then(|s| s.api_key_env.as_deref()),
-        Provider::Tavily => config.tavily.as_ref().and_then(|s| s.api_key_env.as_deref()),
-    };
-    match custom {
-        Some(name) => (name, true),
-        None => (provider.default_key_env(), false),
-    }
-}
-
-fn getenv(name: &str) -> Option<String> {
-    std::env::var(name).ok().map(|v| v.trim().to_string()).filter(|v| !v.is_empty())
-}
-
+/// Flags, then `[web]`, then built-ins. The search endpoint is `--base-url` or
+/// the provider's own URL. `[clank].base_url` is a chat server and is not used.
 fn resolve(
     provider_flag: Option<&str>,
     base_url: Option<&str>,
-    max_flag: Option<u32>,
-    loaded: &Loaded,
+    limit_flag: Option<u32>,
+    format_flag: Option<&str>,
+    file: Option<&config::File>,
     env: impl Fn(&str) -> Option<String>,
 ) -> Result<Resolved, (String, i32)> {
-    let max_results = max_flag.or(loaded.config.max_results).unwrap_or(DEFAULT_MAX_RESULTS);
-    if !(1..=MAX_RESULTS_LIMIT).contains(&max_results) {
-        return Err((format!("--max-results {max_results} is outside 1..={MAX_RESULTS_LIMIT}"), USAGE));
-    }
+    let web = file.map(|f| &f.web);
     if let Some(url) = base_url {
         if !http_url(url) {
             return Err((format!("--base-url {url:?} must be an http or https URL"), USAGE));
         }
     }
-
     let provider = if let Some(name) = provider_flag {
         Provider::parse(name).ok_or_else(|| (format!("unknown --provider {name:?} (brave, tavily)"), USAGE))?
-    } else if let Some(name) = loaded.config.provider.as_deref() {
-        // parse_config already rejected an unknown name; a mismatch here is a bug in that check.
+    } else if let Some(name) = web.and_then(|w| w.default_provider.as_deref()) {
         Provider::parse(name).ok_or_else(|| (format!("unknown provider {name:?} (brave, tavily)"), USAGE))?
     } else {
-        let (brave_env, _) = key_env(&loaded.config, Provider::Brave);
-        let (tavily_env, _) = key_env(&loaded.config, Provider::Tavily);
-        let brave_set = env(brave_env).is_some();
-        let tavily_set = env(tavily_env).is_some();
-        match (brave_set, tavily_set) {
-            (true, false) => Provider::Brave,
-            (false, true) => Provider::Tavily,
-            (true, true) if brave_env == tavily_env => {
-                return Err((
-                    format!("{brave_env} is set and no provider was chosen: pass --provider or set provider in {DEFAULT_CONFIG_PATH}"),
-                    USAGE,
-                ));
-            }
-            (true, true) => {
-                return Err((
-                    format!("both {brave_env} and {tavily_env} are set: pass --provider or set provider in {DEFAULT_CONFIG_PATH}"),
-                    USAGE,
-                ));
-            }
-            (false, false) => {
-                return Err((
-                    format!("no API key: set {brave_env} or {tavily_env}, or set provider in {DEFAULT_CONFIG_PATH}"),
-                    FAIL,
-                ));
-            }
-        }
+        Provider::Brave
     };
-
-    let (env_name, named_in_file) = key_env(&loaded.config, provider);
-    let api_key = match env(env_name) {
+    let limit = limit_flag.or(web.and_then(|w| w.limit)).unwrap_or(DEFAULT_LIMIT);
+    if !(1..=LIMIT_MAX).contains(&limit) {
+        return Err((format!("--limit {limit} is outside 1..={LIMIT_MAX}"), USAGE));
+    }
+    let format = format_flag.or(web.and_then(|w| w.format.as_deref()));
+    let text = match format {
+        None | Some("jsonl") => false,
+        Some("text") => true,
+        Some(other) => return Err((format!("--format {other:?} must be jsonl or text"), USAGE)),
+    };
+    let keys = web.map(|w| section_keys(w, provider));
+    let named = keys.and_then(|k| k.api_key_env.as_deref());
+    let inline = keys.and_then(|k| k.api_key.as_deref());
+    let api_key = match config::key_from(named, inline, Some(provider.default_key_env()), &env) {
         Some(k) => k,
-        None if named_in_file => {
-            let path = loaded.path.as_deref().unwrap_or(DEFAULT_CONFIG_PATH);
-            return Err((format!("no API key: {path} names {env_name}, and it is unset or empty"), FAIL));
+        None => {
+            let name = named.unwrap_or(provider.default_key_env());
+            let msg = match (named, file) {
+                (Some(_), Some(f)) => format!("no API key: {} names {name}, and it is unset or empty", f.path.display()),
+                _ => format!("no API key: set {name}"),
+            };
+            return Err((msg, FAIL));
         }
-        None => return Err((format!("no API key: set {env_name}"), FAIL)),
     };
     let endpoint = base_url.unwrap_or_else(|| provider.default_endpoint()).to_string();
-    Ok(Resolved { provider, endpoint, api_key, max_results })
+    Ok(Resolved { provider, endpoint, api_key, limit, text })
 }
 
 fn percent_encode(s: &str) -> String {
@@ -421,24 +310,28 @@ fn take_response(mut resp: ureq::http::Response<ureq::Body>, cap: usize) -> Resu
     Ok(Raw { status_not_ok, status_label, content_type, body, truncated })
 }
 
+fn hide(resolved: &Resolved, text: &str) -> String {
+    config::redact(text, &resolved.api_key)
+}
+
 fn search(timeout: u64, resolved: &Resolved, query: &str) -> Result<(Vec<Hit>, u32), String> {
     let agent = agent(timeout);
     let resp = match resolved.provider {
         Provider::Brave => {
-            let url = with_query(&resolved.endpoint, &[("q", query), ("count", &resolved.max_results.to_string())]);
+            let url = with_query(&resolved.endpoint, &[("q", query), ("count", &resolved.limit.to_string())]);
             agent
                 .get(&url)
                 .header("Accept", "application/json")
                 .header("X-Subscription-Token", &resolved.api_key)
                 .call()
-                .map_err(|e| format!("request to {} failed: {e}", resolved.endpoint))?
+                .map_err(|e| hide(resolved, &format!("request to {} failed: {e}", resolved.endpoint)))?
         }
         Provider::Tavily => {
             // An unspecified depth can be promoted to advanced (two credits).
             // One invocation is one basic search.
             let body = json!({
                 "query": query,
-                "max_results": resolved.max_results,
+                "max_results": resolved.limit,
                 "search_depth": "basic",
             });
             agent
@@ -446,19 +339,19 @@ fn search(timeout: u64, resolved: &Resolved, query: &str) -> Result<(Vec<Hit>, u
                 .header("Content-Type", "application/json")
                 .header("Authorization", format!("Bearer {}", resolved.api_key))
                 .send_json(&body)
-                .map_err(|e| format!("request to {} failed: {e}", resolved.endpoint))?
+                .map_err(|e| hide(resolved, &format!("request to {} failed: {e}", resolved.endpoint)))?
         }
     };
     let raw = take_response(resp, SEARCH_BODY_CAP)?;
     if raw.truncated {
-        return Err(format!("response exceeded {SEARCH_BODY_CAP} bytes"));
+        return Err(hide(resolved, &format!("response exceeded {SEARCH_BODY_CAP} bytes")));
     }
     if raw.status_not_ok {
-        return Err(http_failure(raw.status_label, &raw.body));
+        return Err(hide(resolved, &http_failure(raw.status_label, &raw.body)));
     }
-    let payload: Value = serde_json::from_str(&raw.body).map_err(|e| format!("provider returned non-JSON: {e}"))?;
+    let payload: Value = serde_json::from_str(&raw.body).map_err(|e| hide(resolved, &format!("provider returned non-JSON: {e}")))?;
     if payload.get("error").is_some() {
-        return Err(format!("provider returned an error: {}", error_detail(&raw.body)));
+        return Err(hide(resolved, &format!("provider returned an error: {}", error_detail(&raw.body))));
     }
     parse_hits(resolved.provider, &payload)
 }
@@ -744,21 +637,20 @@ fn run(args: Args) -> i32 {
         eprintln!("clank-web: --timeout must be at least 1");
         return USAGE;
     }
-    if let Some(n) = args.max_bytes {
-        if args.fetch.is_none() {
-            eprintln!("clank-web: --max-bytes applies to --fetch");
+    let file = match config::load() {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("clank-web: {e}");
             return USAGE;
         }
-        if n == 0 || n > FETCH_BYTES_LIMIT {
-            eprintln!("clank-web: --max-bytes {n} is outside 1..={FETCH_BYTES_LIMIT}");
+    };
+    // `--fetch` has no provider and no key. Format still comes from the flag or `[web]`.
+    let text = match args.format.as_deref().or(file.as_ref().and_then(|f| f.web.format.as_deref())) {
+        None | Some("jsonl") => false,
+        Some("text") => true,
+        Some(other) => {
+            eprintln!("clank-web: --format {other:?} must be jsonl or text");
             return USAGE;
-        }
-    }
-    let loaded = match load_config(args.config.as_deref()) {
-        Ok(c) => c,
-        Err((msg, code)) => {
-            eprintln!("clank-web: {msg}");
-            return code;
         }
     };
 
@@ -767,9 +659,8 @@ fn run(args: Args) -> i32 {
             eprintln!("clank-web: --fetch {url:?} must be an http or https URL");
             return USAGE;
         }
-        let cap = args.max_bytes.unwrap_or(DEFAULT_FETCH_BYTES);
         let started = Instant::now();
-        let hit = match fetch_url(args.timeout, &url, cap) {
+        let hit = match fetch_url(args.timeout, &url, FETCH_BYTES) {
             Ok(h) => h,
             Err(e) => {
                 eprintln!("clank-web: {e}");
@@ -777,12 +668,12 @@ fn run(args: Args) -> i32 {
             }
         };
         let truncated = hit.truncated;
-        if let Err(e) = write_hits(args.text, std::slice::from_ref(&hit)) {
+        if let Err(e) = write_hits(text, std::slice::from_ref(&hit)) {
             eprintln!("clank-web: {e}");
             return FAIL;
         }
         if truncated {
-            eprintln!("clank-web: response truncated at {cap} bytes");
+            eprintln!("clank-web: response truncated at {FETCH_BYTES} bytes");
         }
         if !args.quiet {
             eprintln!("clank-web: fetched 1 page in {} ms", started.elapsed().as_millis());
@@ -797,7 +688,14 @@ fn run(args: Args) -> i32 {
             return USAGE;
         }
     };
-    let resolved = match resolve(args.provider.as_deref(), args.base_url.as_deref(), args.max_results, &loaded, getenv) {
+    let resolved = match resolve(
+        args.provider.as_deref(),
+        args.base_url.as_deref(),
+        args.limit,
+        args.format.as_deref(),
+        file.as_ref(),
+        config::env_var,
+    ) {
         Ok(r) => r,
         Err((msg, code)) => {
             eprintln!("clank-web: {msg}");
@@ -812,7 +710,7 @@ fn run(args: Args) -> i32 {
             return FAIL;
         }
     };
-    if let Err(e) = write_hits(args.text, &hits) {
+    if let Err(e) = write_hits(resolved.text, &hits) {
         eprintln!("clank-web: {e}");
         return FAIL;
     }
@@ -854,59 +752,57 @@ mod tests {
         move |name| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| (*v).to_string()).filter(|v| !v.is_empty())
     }
 
-    fn loaded(text: &str) -> Loaded {
-        Loaded { config: parse_config(text).unwrap(), path: Some(DEFAULT_CONFIG_PATH.into()) }
+    fn file(text: &str) -> config::File {
+        let mut parsed = config::parse(text).unwrap();
+        parsed.path = std::path::PathBuf::from(".clank/config.toml");
+        parsed
     }
 
     #[test]
-    fn the_example_config_is_the_one_the_doc_shows() {
-        let file = include_str!("../.clank/config.example.toml");
-        let doc = include_str!("../docs/clank-web.md");
-        let fence = doc.split("```toml\n").nth(1).expect("toml fence in docs/clank-web.md");
-        let fence = fence.split("```").next().expect("fence end");
-        assert_eq!(fence.trim_end(), file.trim_end(), "docs/clank-web.md and .clank/config.example.toml drifted");
-        let cfg = parse_config(file).unwrap();
-        assert_eq!(cfg.provider.as_deref(), Some("brave"));
-        assert_eq!(cfg.max_results, Some(5));
-        assert_eq!(cfg.brave.unwrap().api_key_env.as_deref(), Some("BRAVE_API_KEY"));
-        assert_eq!(cfg.tavily.unwrap().api_key_env.as_deref(), Some("TAVILY_API_KEY"));
-    }
-
-    #[test]
-    fn a_key_in_the_file_is_rejected() {
-        let err = parse_config("provider = \"brave\"\napi_key = \"secret\"\n").unwrap_err();
-        assert!(err.contains("api_key_env"), "{err}");
-        assert!(parse_config("provider = \"google\"\n").is_err());
-        assert!(parse_config("max_results = 0\n").is_err());
-        assert!(parse_config("max_results = 21\n").is_err());
-        assert!(parse_config("[brave]\napi_key_env = \"not a name\"\n").is_err());
-        assert!(parse_config("").is_ok());
-    }
-
-    #[test]
-    fn the_flag_beats_the_file_and_one_key_selects_its_provider() {
-        let file = loaded("provider = \"tavily\"\nmax_results = 3\n");
-        let got = resolve(Some("brave"), None, Some(2), &file, env_of(&[("BRAVE_API_KEY", "k")])).unwrap();
+    fn flags_beat_the_file_and_the_default_provider_is_brave() {
+        let cfg = file("[clank]\nbase_url = \"http://127.0.0.1:1/v1\"\nmodel = \"poison\"\n\n[web]\ndefault_provider = \"tavily\"\nlimit = 3\nformat = \"text\"\n");
+        let got = resolve(Some("brave"), None, Some(2), Some("jsonl"), Some(&cfg), env_of(&[("BRAVE_API_KEY", "k")])).unwrap();
         assert_eq!(got.provider, Provider::Brave);
-        assert_eq!(got.max_results, 2);
+        assert_eq!(got.limit, 2);
+        assert!(!got.text);
         assert_eq!(got.api_key, "k");
-        assert_eq!(got.endpoint, BRAVE_ENDPOINT);
+        assert_eq!(got.endpoint, BRAVE_ENDPOINT, "[clank].base_url is a chat server");
 
-        let empty = Loaded { config: FileConfig::default(), path: None };
-        let got = resolve(None, None, None, &empty, env_of(&[("TAVILY_API_KEY", "t")])).unwrap();
-        assert_eq!(got.provider, Provider::Tavily);
-        assert_eq!(got.max_results, DEFAULT_MAX_RESULTS);
+        let from_file = resolve(None, None, None, None, Some(&cfg), env_of(&[("TAVILY_API_KEY", "t")])).unwrap();
+        assert_eq!(from_file.provider, Provider::Tavily);
+        assert_eq!(from_file.limit, 3);
+        assert!(from_file.text);
+        assert_eq!(from_file.endpoint, TAVILY_ENDPOINT);
 
-        let err = resolve(None, None, None, &empty, env_of(&[("BRAVE_API_KEY", "a"), ("TAVILY_API_KEY", "b")])).unwrap_err();
-        assert_eq!(err.1, USAGE);
+        let both = resolve(None, None, None, None, None, env_of(&[("BRAVE_API_KEY", "a"), ("TAVILY_API_KEY", "b")])).unwrap();
+        assert_eq!(both.provider, Provider::Brave);
+        assert_eq!(both.api_key, "a");
+        assert_eq!(both.limit, DEFAULT_LIMIT);
 
-        let err = resolve(None, None, None, &empty, env_of(&[])).unwrap_err();
+        let err = resolve(None, None, None, None, None, env_of(&[("TAVILY_API_KEY", "t")])).unwrap_err();
+        assert_eq!(err.1, FAIL, "{:?}", err.0);
+        assert!(err.0.contains("BRAVE_API_KEY"), "{}", err.0);
+
+        let err = resolve(None, None, None, None, None, env_of(&[])).unwrap_err();
         assert_eq!(err.1, FAIL, "{:?}", err.0);
 
-        let named = loaded("provider = \"brave\"\n\n[brave]\napi_key_env = \"SEARCH_TOKEN\"\n");
-        let err = resolve(None, None, None, &named, env_of(&[])).unwrap_err();
+        let named = file("[web.brave]\napi_key_env = \"SEARCH_TOKEN\"\n");
+        let err = resolve(None, None, None, None, Some(&named), env_of(&[])).unwrap_err();
         assert!(err.0.contains("SEARCH_TOKEN"), "{}", err.0);
         assert_eq!(err.1, FAIL);
+
+        let named = file("[web.brave]\napi_key_env = \"SEARCH_TOKEN\"\napi_key = \"inline-secret\"\n");
+        let got = resolve(None, None, None, None, Some(&named), env_of(&[("BRAVE_API_KEY", "not-this"), ("SEARCH_TOKEN", "from-env")])).unwrap();
+        assert_eq!(got.api_key, "from-env");
+        let got = resolve(None, None, None, None, Some(&named), env_of(&[("BRAVE_API_KEY", "not-this")])).unwrap();
+        assert_eq!(got.api_key, "inline-secret");
+
+        let err = resolve(Some("nope"), None, None, None, None, env_of(&[])).unwrap_err();
+        assert_eq!(err.1, USAGE);
+        let err = resolve(None, None, Some(0), None, None, env_of(&[("BRAVE_API_KEY", "k")])).unwrap_err();
+        assert_eq!(err.1, USAGE);
+        let err = resolve(None, None, None, Some("csv"), None, env_of(&[("BRAVE_API_KEY", "k")])).unwrap_err();
+        assert_eq!(err.1, USAGE);
     }
 
     #[test]
@@ -962,6 +858,8 @@ mod tests {
         );
         let a = args(&["--fetch", "https://example.com"]);
         assert_eq!(a.fetch.as_deref(), Some("https://example.com"));
-        assert!(Args::try_parse_from(["clank-web", "--max-bytes", "10", "q"]).is_ok());
+        let a = args(&["--format", "text", "--limit", "3", "q"]);
+        assert_eq!(a.format.as_deref(), Some("text"));
+        assert_eq!(a.limit, Some(3));
     }
 }

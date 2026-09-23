@@ -19,8 +19,14 @@
 //! Tools and a schema are never in the same request (this server build rejects
 //! the pair): with `--tools`, the rounds run unconstrained and then exactly one
 //! final request carries the schema and no tools. See PROTOCOL.md.
+//!
+//! Optional `.clank/config.toml` (walked up from the working directory) supplies
+//! `[clank]` when flags and the environment do not. A missing file leaves
+//! `CLANK_MODEL` and `CLANK_BASE_URL` in charge. There is no built-in model or
+//! base URL. `[web]` in that file is for `clank-web`.
 
 mod client;
+mod config;
 mod context;
 mod tools;
 
@@ -31,8 +37,9 @@ use std::io::{IsTerminal, Read, Write};
 use std::path::PathBuf;
 use std::time::Duration;
 
-const DEFAULT_MODEL: &str = "qwen3.8-27b-gsq-rco-iq3xxs";
-const DEFAULT_BASE_URL: &str = "http://127.0.0.1:40583/v1";
+const DEFAULT_TIMEOUT: u64 = 600;
+const DEFAULT_MAX_TOKENS: u32 = 8192;
+const DEFAULT_MAX_ROUNDS: usize = 12;
 
 #[derive(Debug)]
 pub enum Fail {
@@ -97,29 +104,29 @@ struct Args {
     #[arg(short = '0', long = "null")]
     null_items: bool,
 
-    /// model name
-    #[arg(long, env = "CLANK_MODEL", default_value = DEFAULT_MODEL)]
-    model: String,
+    /// model name; otherwise CLANK_MODEL, otherwise [clank].model
+    #[arg(long)]
+    model: Option<String>,
 
-    /// OpenAI-compatible base URL
-    #[arg(long, env = "CLANK_BASE_URL", default_value = DEFAULT_BASE_URL)]
-    base_url: String,
+    /// OpenAI-compatible base URL; otherwise CLANK_BASE_URL, otherwise [clank].base_url
+    #[arg(long)]
+    base_url: Option<String>,
 
     /// API key (local servers usually need none)
     #[arg(long, env = "CLANK_API_KEY")]
     api_key: Option<String>,
 
-    /// per-request timeout, seconds
-    #[arg(long, value_name = "SECS", default_value_t = 600)]
-    timeout: u64,
+    /// per-request timeout, seconds; otherwise CLANK_TIMEOUT, otherwise [clank].timeout (default 600)
+    #[arg(long, value_name = "SECS")]
+    timeout: Option<u64>,
 
-    /// maximum tool-call rounds per prompt
-    #[arg(long, value_name = "N", default_value_t = 12)]
-    max_rounds: usize,
+    /// maximum tool-call rounds per prompt; otherwise [clank].max_rounds (default 12)
+    #[arg(long, value_name = "N")]
+    max_rounds: Option<usize>,
 
-    /// maximum completion tokens
-    #[arg(long, value_name = "N", default_value_t = 8192)]
-    max_tokens: u32,
+    /// maximum completion tokens; otherwise [clank].max_tokens (default 8192)
+    #[arg(long, value_name = "N")]
+    max_tokens: Option<u32>,
 
     /// constrain the final answer to a JSON schema (inline JSON object)
     #[arg(long, value_name = "JSON")]
@@ -295,9 +302,20 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
              do not cite a file or line you were not given.\n",
         );
     }
+    let thinking = match args.thinking.as_deref() {
+        Some(level) => parse_thinking(level)?,
+        None => None,
+    };
+    // After the invocation itself is valid. `--list-tools` returned above, so a
+    // broken file does not block printing the tool list.
+    let file = config::load().map_err(Fail::Usage)?;
+    let settings = settings_from(args, file.as_ref(), config::env_var)?;
     let system = match &args.system {
         Some(s) => format!("{system}\n\n{}", payload(s)?),
-        None => system,
+        None => match file.as_ref().and_then(|f| f.clank.system.as_deref()).map(str::trim).filter(|s| !s.is_empty()) {
+            Some(s) => format!("{system}\n\n{s}"),
+            None => system,
+        },
     };
     let mut head: Vec<Value> = vec![json!({ "role": "system", "content": system })];
     if let Some(t) = tree {
@@ -311,14 +329,10 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
     // what lets the server reuse the prompt prefix.
     head.push(json!({ "role": "user", "content": prompt }));
 
-    let thinking = match args.thinking.as_deref() {
-        Some(level) => parse_thinking(level)?,
-        None => None,
-    };
     if args.jsonl {
-        emit_run_header(args, &system, tools_enabled);
+        emit_run_header(args, &settings, &system, tools_enabled);
     }
-    let runner = Runner::new(args, schema, thinking, tools_enabled);
+    let runner = Runner::new(args, &settings, schema, thinking, tools_enabled);
     match items {
         None => {
             let out = Emitter::new(args, None);
@@ -380,9 +394,92 @@ fn parse_thinking(level: &str) -> Result<Option<client::Thinking>, Fail> {
     Ok(Some(thinking))
 }
 
+/// Resolved endpoint. Flags, then environment, then `[clank]`, then built-ins.
+/// Model and base URL have no built-in: omitting all three layers is usage.
+#[derive(Debug)]
+struct Settings {
+    model: String,
+    base_url: String,
+    api_key: Option<String>,
+    timeout: u64,
+    max_tokens: u32,
+    max_rounds: usize,
+}
+
+fn flagged(value: &Option<String>) -> Option<String> {
+    value.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+fn configured(value: &Option<String>) -> Option<String> {
+    value.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+fn settings_from(args: &Args, file: Option<&config::File>, env: impl Fn(&str) -> Option<String>) -> Result<Settings, Fail> {
+    let clank = file.map(|f| &f.clank);
+    let model = flagged(&args.model)
+        .or_else(|| env("CLANK_MODEL"))
+        .or_else(|| clank.and_then(|c| configured(&c.model)))
+        .ok_or_else(|| {
+            Fail::Usage("no model: pass --model, set CLANK_MODEL, or set [clank].model in .clank/config.toml".into())
+        })?;
+    let base_url = flagged(&args.base_url)
+        .or_else(|| env("CLANK_BASE_URL"))
+        .or_else(|| clank.and_then(|c| configured(&c.base_url)))
+        .ok_or_else(|| {
+            Fail::Usage(
+                "no base URL: pass --base-url, set CLANK_BASE_URL, or set [clank].base_url in .clank/config.toml".into(),
+            )
+        })?;
+    // `--api-key` and CLANK_API_KEY share one clap field, and both sit above the file.
+    let api_key = match args.api_key.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        Some(k) => Some(k.to_string()),
+        None => config::key_from(
+            clank.and_then(|c| c.api_key_env.as_deref()),
+            clank.and_then(|c| c.api_key.as_deref()),
+            None,
+            &env,
+        ),
+    };
+    let timeout_env = match env("CLANK_TIMEOUT") {
+        Some(s) => Some(s.parse::<u64>().map_err(|_| Fail::Usage(format!("CLANK_TIMEOUT={s:?} is not a number of seconds")))?),
+        None => None,
+    };
+    let timeout = positive(
+        args.timeout.or(timeout_env).or(clank.and_then(|c| c.timeout)).unwrap_or(DEFAULT_TIMEOUT),
+        "timeout",
+    )?;
+    let max_tokens = positive_u32(
+        args.max_tokens.or(clank.and_then(|c| c.max_tokens)).unwrap_or(DEFAULT_MAX_TOKENS),
+        "max-tokens",
+    )?;
+    let max_rounds_flag = args.max_rounds.map(|n| n as u64);
+    let max_rounds = positive(
+        max_rounds_flag.or(clank.and_then(|c| c.max_rounds)).unwrap_or(DEFAULT_MAX_ROUNDS as u64),
+        "max-rounds",
+    )?;
+    let max_rounds = usize::try_from(max_rounds).map_err(|_| Fail::Usage("max-rounds does not fit".into()))?;
+    Ok(Settings { model, base_url, api_key, timeout, max_tokens, max_rounds })
+}
+
+fn positive(value: u64, label: &str) -> Result<u64, Fail> {
+    if value == 0 {
+        Err(Fail::Usage(format!("{label} must be at least 1")))
+    } else {
+        Ok(value)
+    }
+}
+
+fn positive_u32(value: u32, label: &str) -> Result<u32, Fail> {
+    if value == 0 {
+        Err(Fail::Usage(format!("{label} must be at least 1")))
+    } else {
+        Ok(value)
+    }
+}
+
 /// The first line of a `--jsonl` run: what produced this trace. A trace is
 /// evidence, and evidence without provenance cannot be checked later.
-fn emit_run_header(args: &Args, system: &str, tools_enabled: bool) {
+fn emit_run_header(args: &Args, settings: &Settings, system: &str, tools_enabled: bool) {
     println!(
         "{}",
         json!({
@@ -392,8 +489,8 @@ fn emit_run_header(args: &Args, system: &str, tools_enabled: bool) {
             // or one with a skill appended. Two traces stay comparable across a
             // prompt change because this changes when the text does.
             "prompt": prompt_id(system),
-            "model": args.model,
-            "base_url": args.base_url,
+            "model": settings.model,
+            "base_url": settings.base_url,
             "tools": tools_enabled,
             "thinking": args.thinking,
             "argv": redacted_argv(&std::env::args().collect::<Vec<_>>()),
@@ -528,6 +625,7 @@ impl<'a> Emitter<'a> {
 
 struct Runner<'a> {
     args: &'a Args,
+    settings: &'a Settings,
     agent: ureq::Agent,
     schema: Option<Value>,
     tools_json: Value,
@@ -539,12 +637,13 @@ struct Runner<'a> {
 impl<'a> Runner<'a> {
     fn new(
         args: &'a Args,
+        settings: &'a Settings,
         schema: Option<Value>,
         thinking: Option<client::Thinking>,
         tools_enabled: bool,
     ) -> Self {
         let config = ureq::Agent::config_builder()
-            .timeout_per_call(Some(Duration::from_secs(args.timeout)))
+            .timeout_per_call(Some(Duration::from_secs(settings.timeout)))
             .http_status_as_error(false)
             .build();
         Self {
@@ -558,6 +657,7 @@ impl<'a> Runner<'a> {
             schema,
             thinking,
             tools_enabled,
+            settings,
             args,
         }
     }
@@ -573,10 +673,10 @@ impl<'a> Runner<'a> {
         let round = client::stream_round(
             &self.agent,
             client::Request {
-                base_url: &self.args.base_url,
-                model: &self.args.model,
-                api_key: self.args.api_key.as_deref(),
-                max_tokens: self.args.max_tokens,
+                base_url: &self.settings.base_url,
+                model: &self.settings.model,
+                api_key: self.settings.api_key.as_deref(),
+                max_tokens: self.settings.max_tokens,
                 messages,
                 tools,
                 json_schema: schema,
@@ -650,10 +750,10 @@ impl<'a> Runner<'a> {
                 }
 
                 rounds += 1;
-                if rounds > self.args.max_rounds {
+                if rounds > self.settings.max_rounds {
                     return Err(Fail::Model(format!(
                         "stopped after {} tool rounds (--max-rounds)",
-                        self.args.max_rounds
+                        self.settings.max_rounds
                     )));
                 }
                 explored = true;
@@ -745,7 +845,7 @@ impl<'a> Runner<'a> {
         if round.finish_reason.as_deref() == Some("length") {
             return Err(Fail::Model(format!(
                 "answer truncated at {} tokens (--max-tokens); raise it or narrow the prompt",
-                self.args.max_tokens
+                self.settings.max_tokens
             )));
         }
         Ok(())
@@ -847,5 +947,89 @@ mod tests {
         assert_ne!(prompt_id(base), prompt_id(&format!("{base} plus a skill")));
         assert_eq!(prompt_id(base).len(), 8, "short enough for a trace line");
         assert!(prompt_id(base).chars().all(|c| c.is_ascii_hexdigit()));
+    }
+
+    fn args(argv: &[&str]) -> Args {
+        Args::try_parse_from(std::iter::once("clank").chain(argv.iter().copied())).unwrap()
+    }
+
+    fn env_of<'a>(pairs: &'a [(&'a str, &'a str)]) -> impl Fn(&str) -> Option<String> + 'a {
+        move |name| pairs.iter().find(|(k, _)| *k == name).map(|(_, v)| (*v).to_string())
+    }
+
+    #[test]
+    fn flags_beat_env_which_beats_the_file_which_beats_the_built_ins() {
+        let bare = args(&["--model", "m", "--base-url", "http://127.0.0.1:9/v1", "-m", "hi"]);
+        let s = settings_from(&bare, None, env_of(&[])).unwrap();
+        assert_eq!(s.timeout, DEFAULT_TIMEOUT);
+        assert_eq!(s.max_tokens, DEFAULT_MAX_TOKENS);
+        assert_eq!(s.max_rounds, DEFAULT_MAX_ROUNDS);
+
+        let file = config::parse("[clank]\nbase_url = \"http://127.0.0.1:9/v1\"\nmodel = \"from-file\"\nmax_tokens = 123\ntimeout = 10\n").unwrap();
+        let from_file = settings_from(&args(&["-m", "hi"]), Some(&file), env_of(&[])).unwrap();
+        assert_eq!(from_file.model, "from-file");
+        assert_eq!(from_file.base_url, "http://127.0.0.1:9/v1");
+        assert_eq!(from_file.max_tokens, 123);
+        assert_eq!(from_file.timeout, 10);
+        assert_ne!(from_file.max_tokens, DEFAULT_MAX_TOKENS);
+
+        let from_env = settings_from(
+            &args(&["-m", "hi"]),
+            Some(&file),
+            env_of(&[("CLANK_MODEL", "from-env"), ("CLANK_TIMEOUT", "20"), ("CLANK_BASE_URL", "http://127.0.0.1:7/v1")]),
+        )
+        .unwrap();
+        assert_eq!(from_env.model, "from-env");
+        assert_eq!(from_env.base_url, "http://127.0.0.1:7/v1");
+        assert_eq!(from_env.timeout, 20);
+        assert_eq!(from_env.max_tokens, 123, "max_tokens has no environment variable, so the file stands");
+
+        let flagged = args(&[
+            "--model",
+            "from-flag",
+            "--base-url",
+            "http://127.0.0.1:8/v1",
+            "--max-tokens",
+            "50",
+            "--timeout",
+            "3",
+            "-m",
+            "hi",
+        ]);
+        let s = settings_from(
+            &flagged,
+            Some(&file),
+            env_of(&[("CLANK_MODEL", "from-env"), ("CLANK_BASE_URL", "http://127.0.0.1:7/v1"), ("CLANK_TIMEOUT", "20")]),
+        )
+        .unwrap();
+        assert_eq!(s.model, "from-flag");
+        assert_eq!(s.base_url, "http://127.0.0.1:8/v1");
+        assert_eq!(s.max_tokens, 50);
+        assert_eq!(s.timeout, 3);
+    }
+
+    #[test]
+    fn a_missing_model_or_base_url_is_usage_and_names_the_three_layers() {
+        let err = settings_from(&args(&["-m", "hi"]), None, env_of(&[])).unwrap_err();
+        assert_eq!(err.code(), 2);
+        assert!(err.msg().contains("--model"), "{}", err.msg());
+        assert!(err.msg().contains("CLANK_MODEL"), "{}", err.msg());
+        assert!(err.msg().contains("[clank].model"), "{}", err.msg());
+        assert!(!err.msg().contains("40583"), "{}", err.msg());
+        assert!(!err.msg().contains("qwen"), "{}", err.msg());
+
+        let file = config::parse("[clank]\nmodel = \"only-model\"\n").unwrap();
+        let err = settings_from(&args(&["-m", "hi"]), Some(&file), env_of(&[])).unwrap_err();
+        assert!(err.msg().contains("--base-url"), "{}", err.msg());
+        assert_eq!(err.code(), 2);
+
+        let err = settings_from(
+            &args(&["--model", "m", "--base-url", "http://127.0.0.1:9/v1", "-m", "hi"]),
+            None,
+            env_of(&[("CLANK_TIMEOUT", "nope")]),
+        )
+        .unwrap_err();
+        assert!(err.msg().contains("CLANK_TIMEOUT"), "{}", err.msg());
+        assert_eq!(err.code(), 2);
     }
 }

@@ -29,45 +29,78 @@ The default is one JSON object per line:
 {"title":"…","url":"https://…","snippet":"…"}
 ```
 
-`--text` prints the same three fields separated by tabs, one result per line.
-Whitespace inside a field is collapsed so the record stays one line.
+`--format text` prints the same three fields separated by tabs, one result per
+line. Whitespace inside a field is collapsed so the record stays one line.
+`--format jsonl` is the default.
 
-A fetched page uses the same fields. When the body is cut at `--max-bytes`, the
+A fetched page uses the same fields. When the body is cut at 524288 bytes, the
 JSON object also carries `"truncated": true`, and stderr reports the cut even
 with `-q`. `-q` suppresses the result-count line.
 
 ## Config
 
-`clank-web` reads `.clank/config.toml` from the working directory when that file
-exists. `--config PATH` reads that path instead, and does not also read the
-working-directory file. `clank` does not open either one. The example is
-[`.clank/config.example.toml`](../.clank/config.example.toml):
+`.clank/config.toml` is optional. The binaries walk up from the working
+directory and read the closest file. A missing file leaves flags and the
+environment in charge.
+
+Precedence is flags, then the environment, then the file, then built-ins.
+`clank` and `clank-jev` read `[clank]` (model, endpoint, timeout, token cap).
+`clank-web` reads `[web]` and leaves `[clank]` alone, so a chat `base_url` is
+not a search endpoint. `[web]` is not required: a file that only names a Brave
+key does not change `clank` or `clank-jev`.
+
+The sample is [`fixtures/clank.config.toml`](../fixtures/clank.config.toml):
 
 ```toml
-# .clank/config.toml — read by clank-web, from the working directory.
-# clank does not open this file. A key is an environment variable named here.
+# Optional. clank and clank-jev read [clank]. clank-web reads [web].
+# A missing file leaves flags and the environment in charge.
+# Precedence: flags, then environment, then this file, then built-ins.
+# The key stays in the environment. api_key_env names the variable.
+# An inline api_key is used only when that variable is unset.
 
-provider = "brave"
-max_results = 5
+[clank]
+base_url = "http://127.0.0.1:8080/v1"
+model = "local"
+api_key_env = "CLANK_API_KEY"
+timeout = 600
+max_tokens = 8192
+max_rounds = 12
 
-[brave]
+[web]
+default_provider = "brave"
+limit = 5
+format = "jsonl"
+
+[web.brave]
 api_key_env = "BRAVE_API_KEY"
 
-[tavily]
+[web.tavily]
 api_key_env = "TAVILY_API_KEY"
 ```
 
+`[web]` keys belong above `[web.brave]`. In TOML, a key after a table is part of
+that table.
+
 | key | meaning |
 |---|---|
-| `provider` | `brave` or `tavily` |
-| `max_results` | 1..=20, default 5; `--max-results` overrides it |
-| `brave.api_key_env` | environment variable holding the Brave subscription token; default `BRAVE_API_KEY` |
-| `tavily.api_key_env` | environment variable holding the Tavily key; default `TAVILY_API_KEY` |
+| `[clank].base_url` / `model` | chat endpoint for `clank` and `clank-jev`, under the flags and `CLANK_BASE_URL` / `CLANK_MODEL` |
+| `[clank].api_key_env` | variable holding the chat key; `CLANK_API_KEY` and `--api-key` win |
+| `[clank].timeout` / `max_tokens` / `max_rounds` | under the flags (and `CLANK_TIMEOUT`) and above 600 / 8192 / 12 |
+| `[web].default_provider` | `brave` (the built-in) or `tavily`; `--provider` wins |
+| `[web].limit` | 1..=20, built-in 5; `--limit` wins |
+| `[web].format` | `jsonl` (the built-in) or `text`; `--format` wins |
+| `[web.brave].api_key_env` | variable holding the Brave subscription token; default `BRAVE_API_KEY` |
+| `[web.tavily].api_key_env` | variable holding the Tavily key; default `TAVILY_API_KEY` |
 
-A field named `api_key` is a usage error: the file names the variable, and the
-environment holds the value. With no `provider` and no `--provider`, the one key
-that is set selects its provider. Both keys set, and no provider chosen, is exit
-2.
+`api_key_env` names the variable. An inline `api_key` is used only when that
+variable is unset. The default provider is Brave even when only `TAVILY_API_KEY`
+is set: pass `--provider tavily`, or set `[web].default_provider`, to search
+with Tavily.
+
+There is no built-in chat model and no built-in chat URL. `clank` asks for
+`--model` / `CLANK_MODEL` / `[clank].model` and `--base-url` / `CLANK_BASE_URL`
+/ `[clank].base_url` when none of those three layers set them. `--list-tools`
+prints the four filesystem observers without an endpoint.
 
 ## Providers
 
@@ -76,8 +109,9 @@ that is set selects its provider. Both keys set, and no provider chosen, is exit
 | `brave` | `GET https://api.search.brave.com/res/v1/web/search?q=…&count=N` | header `X-Subscription-Token` |
 | `tavily` | `POST https://api.tavily.com/search` with `query`, `max_results`, and `search_depth` set to `basic` | header `Authorization: Bearer` |
 
-`--base-url` replaces that endpoint, for a proxy or a stub. Tavily's depth is
-pinned to `basic` so one invocation is one basic search.
+`--base-url` replaces that endpoint, for a proxy or a stub. It does not read
+`[clank].base_url`. Tavily's depth is pinned to `basic` so one invocation is one
+basic search.
 
 Brave reads `web.results[]` (`title`, `url`, `description`). Tavily reads
 `results[]` (`title`, `url`, `content`). A result with no `url` is skipped and
@@ -88,15 +122,14 @@ counted on stderr. If every result lacks a url, the exit code is 1.
 `--fetch URL` is one GET of an `http` or `https` URL. Redirects are followed.
 HTML is reduced to a title and text, and `script` and `style` elements are
 dropped; any other body is kept as the snippet. There is no second request, no
-JavaScript, and no walk of links on the page. The default body cap is 524288
-bytes. `--max-bytes` sets it, up to 8388608.
+JavaScript, and no walk of links on the page. The body cap is 524288 bytes.
 
 ## Compose
 
 ```sh
 clank-web "rust sigpipe default disposition" | clank -m "summarize with citations"
 printf '%s\n' "$query" | clank-web | clank --no-tools -m "summarize with citations"
-clank-web --text "query" | clank -m "summarize with citations"
+clank-web --format text "query" | clank -m "summarize with citations"
 clank-web --fetch https://example.com | clank -m "one paragraph: what is this page?"
 ```
 

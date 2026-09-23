@@ -1,6 +1,6 @@
 # clank — status
 
-Project log, last written 2026-09-22. The contract is
+Project log, last written 2026-09-23. The contract is
 [PROTOCOL.md](PROTOCOL.md); the reference is [README.md](README.md); the dated
 evidence is
 [docs/history/verification-log.md](docs/history/verification-log.md). This file
@@ -57,13 +57,14 @@ says where the project is, what is open, and how to check any of it.
 - `clank` 0.1.0: one prompt, one request, one answer — the six invariants in
   PROTOCOL.md. `clank-jev` 0.1.0: typed decisions for routing, providers
   `typesafe`, `openrouter`, `kev`. `clank-web`: one search or one fetch,
-  providers `brave` and `tavily`, config in `.clank/config.toml` read by that
-  binary only.
-- 100 tests (`cargo test`), all against stub servers: no model, no key, no
+  providers `brave` (the default) and `tavily`. Optional `.clank/config.toml`:
+  `[clank]` is the model and endpoint for `clank` and `clank-jev`; `[web]` is
+  search settings for `clank-web`. No built-in chat model or base URL.
+- 120 tests (`cargo test`), all against stub servers: no model, no key, no
   network. `tests/wire.rs` (24, the protocol), `tests/jev.rs` (10, the decision
   stage), `tests/jev_ci_stub.rs` (1), `tests/web.rs` (10, the search stage),
-  `tests/docs.rs` (8, docs vs code), `tests/rules.rs` (3, the rules themselves),
-  plus 44 unit tests in `src/`.
+  `tests/config.rs` (8, the shared file), `tests/docs.rs` (8, docs vs code),
+  `tests/rules.rs` (3, the rules themselves), plus 56 unit tests in `src/`.
 - Package name on crates.io is `clank-cli-app`; the installed binaries remain
   `clank`, `clank-jev` and `clank-web`. Install:
   `cargo install clank-cli-app --locked`.
@@ -84,7 +85,7 @@ says where the project is, what is open, and how to check any of it.
 ## How to check it
 
 ```sh
-cargo test                                            # 81 tests, no model needed
+cargo test                                            # 120 tests, no model needed
 python3 scripts/reflow-docs.py --check $(git ls-files '*.md' ':!fixtures/*')   # doc convention
 sh scripts/jev-ci-stub.sh                             # the CI jev gate, against a local stub
 python3 local/verify-rules.py                         # machine-local scratch: needs jev and a stub

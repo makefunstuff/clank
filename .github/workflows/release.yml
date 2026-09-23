@@ -89,7 +89,7 @@ jobs:
           name="clank-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p "dist/$name"
           cp "target/${{ matrix.target }}/release/clank" "target/${{ matrix.target }}/release/clank-jev" "target/${{ matrix.target }}/release/clank-web" "dist/$name/"
-          cp README.md LICENSE CHEATSHEET.md PROTOCOL.md .clank/config.example.toml "dist/$name/"
+          cp README.md LICENSE CHEATSHEET.md PROTOCOL.md fixtures/clank.config.toml "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           cd dist
           python3 -c "import hashlib; d=hashlib.sha256(open('$name.tar.gz','rb').read()).hexdigest(); print(d + '  $name.tar.gz')" > "$name.tar.gz.sha256"

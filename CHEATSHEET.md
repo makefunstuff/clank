@@ -11,8 +11,10 @@ context is exactly what was piped.
 - [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) —
   local models on a 16 GB Mac
 
-Set `CLANK_BASE_URL` and `CLANK_MODEL` (flags override `$CLANK_*`). Do not rely
-on a laptop-only built-in default — point at your OpenAI-compatible server.
+Set `CLANK_BASE_URL` and `CLANK_MODEL`, or `[clank]` in `.clank/config.toml`.
+Precedence is flags, then the environment, then the file, then built-ins. There
+is no built-in model or base URL. Web search keys live under `[web]` and are
+read by `clank-web`.
 
 
 ## Install
@@ -143,46 +145,50 @@ Credentials come from the environment only.
 | `--expect-min N` | exit 1 unless an ordered decision is at least this level |
 | `--print-reason` | print the closed-choice reason instead of the value |
 | `--provider NAME` | `auto`, `typesafe`, `openrouter`, `kev` |
-| `--model ID` | defaults per provider: `jev-latest`, `typesafe/jev-1.13`, `kev-latest` |
-| `--base-url URL` | move the endpoint (a local `kev`, a proxy, a stub) |
-| `--timeout SECS` | per-request timeout, default 60 |
+| `--model ID` | provider default, or `[clank].model` when the flag is absent |
+| `--base-url URL` | provider endpoint, or `[clank].base_url` when the flag is absent |
+| `--timeout SECS` | per-request timeout; otherwise `[clank].timeout`, otherwise 60 |
 | `--json` | the full result object instead of the bare value |
 | `-q` / `--quiet` | no diagnostic line on stderr |
 
 `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) selects the TypeSafe
 route; `OPENROUTER_API_KEY` selects OpenRouter's Decisions endpoint;
-`--provider kev` needs no credential.
+`--provider kev` needs no credential. `[clank].api_key_env` is a fallback when
+those are unset. `[web]` is left alone. `CLANK_MODEL` and `CLANK_BASE_URL`
+belong to `clank`.
 
 ## `clank-web` flags
 
 One search, or one GET. stdout is JSONL (`title`, `url`, `snippet`); stderr is
-diagnostics. The schema and the example file are in
+diagnostics. The schema and the sample file are in
 [docs/clank-web.md](docs/clank-web.md).
 
 | flag | meaning |
 |---|---|
-| `--provider NAME` | `brave` or `tavily`; otherwise `.clank/config.toml`, otherwise the one key that is set |
-| `--max-results N` | 1..=20, default 5; overrides `max_results` in the config |
-| `--config PATH` | config file; default `.clank/config.toml` in the working directory, when it exists |
-| `--base-url URL` | replace the provider endpoint (a proxy, a stub) |
-| `--fetch URL` | GET one `http` or `https` URL; no search and no key |
-| `--max-bytes N` | fetched body cap, default 524288, max 8388608 |
+| `--provider NAME` | `brave` (default) or `tavily`; `[web].default_provider` overrides the built-in when the flag is absent |
+| `--limit N` | 1..=20, default 5; overrides `[web].limit` |
+| `--format jsonl\|text` | JSONL, or `title<TAB>url<TAB>snippet`; default `jsonl` |
+| `--base-url URL` | replace the provider endpoint (a proxy, a stub). Ignores `[clank].base_url` |
+| `--fetch URL` | GET one `http` or `https` URL; no search and no key. Body cap 524288 bytes |
 | `--timeout SECS` | per-request timeout, default 30 |
-| `--text` | `title<TAB>url<TAB>snippet` instead of JSONL |
 | `-q` / `--quiet` | no result-count line on stderr |
 
 `BRAVE_API_KEY` is the Brave subscription token (`X-Subscription-Token`).
-`TAVILY_API_KEY` is sent as `Authorization: Bearer`. The config can name a
-different variable; it cannot hold the key. `clank` does not read the file.
+`TAVILY_API_KEY` is sent as `Authorization: Bearer`. `[web.brave].api_key_env`
+and `[web.tavily].api_key_env` name a different variable. An inline `api_key` is
+used only when that variable is unset. The default provider stays Brave when
+only `TAVILY_API_KEY` is set.
 
 ```toml
-provider = "brave"
-max_results = 5
+[web]
+default_provider = "brave"
+limit = 5
+format = "jsonl"
 
-[brave]
+[web.brave]
 api_key_env = "BRAVE_API_KEY"
 
-[tavily]
+[web.tavily]
 api_key_env = "TAVILY_API_KEY"
 ```
 
@@ -203,10 +209,10 @@ api_key_env = "TAVILY_API_KEY"
 | `--list-tools` | | print the tool definitions as JSON, no model call |
 | `--jsonl` / `-j` | | JSONL events on stdout instead of text |
 | `-q` / `--quiet` | | suppress stderr breadcrumbs |
-| `--model` / `--base-url` / `--api-key` | `CLANK_MODEL` / `CLANK_BASE_URL` / `CLANK_API_KEY` | endpoint |
-| `--timeout N` | `CLANK_TIMEOUT` | per-request timeout, seconds (default 600) |
-| `--max-tokens N` | | completion cap (default 8192) |
-| `--max-rounds N` | | tool-call rounds with `--tools` (default 12) |
+| `--model` / `--base-url` / `--api-key` | `CLANK_MODEL` / `CLANK_BASE_URL` / `CLANK_API_KEY` | endpoint; otherwise `[clank]` in `.clank/config.toml`. No built-in model or base URL |
+| `--timeout N` | `CLANK_TIMEOUT` | per-request timeout, seconds; otherwise `[clank].timeout` (default 600) |
+| `--max-tokens N` | | completion cap; otherwise `[clank].max_tokens` (default 8192) |
+| `--max-rounds N` | | tool-call rounds with `--tools`; otherwise `[clank].max_rounds` (default 12) |
 
 `--json-schema` and `--system` accept `@path` to read the payload from a file.
 

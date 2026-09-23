@@ -38,7 +38,8 @@ export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
 clank -m 'reply with exactly: pong'    # -> pong, exit 0
 ```
 
-Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`) yourself.
+Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`, or
+`[clank]` in `.clank/config.toml`) yourself.
 
 ## Harness cost (dated)
 
@@ -89,8 +90,8 @@ short without drifting from `--help`.
 `--expect`, `--expect-min`, `--json`, `--min-prob`, `--model`, `--print-reason`,
 `--provider`, `--quiet`, `--score`, `--timeout`
 
-`clank-web`: `--base-url`, `--config`, `--fetch`, `--max-bytes`, `--max-results`,
-`--provider`, `--quiet`, `--text`, `--timeout`
+`clank-web`: `--base-url`, `--fetch`, `--format`, `--limit`, `--provider`,
+`--quiet`, `--timeout`
 
 ## License
 

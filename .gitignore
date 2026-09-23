@@ -2,5 +2,5 @@ target/
 local/
 dist/
 __pycache__/
-# clank-web reads this from the working directory. The example is config.example.toml.
+# A live config is per machine. The sample is fixtures/clank.config.toml.
 .clank/config.toml

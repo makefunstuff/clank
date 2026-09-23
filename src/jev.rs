@@ -20,8 +20,15 @@
 //!   `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) -> api.typesafe.ai
 //!   `OPENROUTER_API_KEY` -> openrouter.ai Decisions endpoint (the same Jev)
 //!
+//! Optional `.clank/config.toml` supplies `[clank].model` and `[clank].base_url`
+//! when `--model` and `--base-url` are absent. `[web]` is ignored. A missing
+//! file leaves the provider built-ins and the environment variables above in
+//! charge. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
+//!
 //! Exit codes: 0 decided and passed every gate · 1 a gate failed (the decision is
 //! usable, you asked not to trust it) · 2 usage · 3 provider, network or credentials.
+
+mod config;
 
 use clap::Parser;
 use serde_json::{json, Map, Value};
@@ -101,9 +108,9 @@ struct Args {
     #[arg(long, value_name = "URL")]
     base_url: Option<String>,
 
-    /// per-request timeout, seconds
-    #[arg(long, value_name = "SECS", default_value_t = 60)]
-    timeout: u64,
+    /// per-request timeout, seconds; otherwise [clank].timeout (default 60)
+    #[arg(long, value_name = "SECS")]
+    timeout: Option<u64>,
 
     /// print the full result object instead of the bare value
     #[arg(long)]
@@ -475,29 +482,51 @@ impl Provider {
     }
 }
 
-fn resolve_provider(args: &Args) -> Result<(Provider, String, String, String), (String, i32)> {
-    let typesafe_key = ["TYPESAFE_API_KEY", "JEV_API_KEY", "JEV_CLI_API_KEY"]
-        .iter()
-        .find_map(|k| std::env::var(k).ok().filter(|v| !v.trim().is_empty()));
-    let openrouter_key = std::env::var("OPENROUTER_API_KEY").ok().filter(|v| !v.trim().is_empty());
+struct Route {
+    provider: Provider,
+    model: String,
+    url: String,
+    key: String,
+    timeout: u64,
+}
+
+fn configured_str(value: &Option<String>) -> Option<String> {
+    value.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
+}
+
+/// Provider credentials stay above `[clank]`. A Brave key in the environment,
+/// or a `[web]` section, does not become a Jev credential.
+fn resolve_provider(args: &Args, clank: &config::Clank) -> Result<Route, (String, i32)> {
+    let typesafe_key = ["TYPESAFE_API_KEY", "JEV_API_KEY", "JEV_CLI_API_KEY"].iter().find_map(|k| config::env_var(k));
+    let openrouter_key = config::env_var("OPENROUTER_API_KEY");
+    let file_key = config::key_from(clank.api_key_env.as_deref(), clank.api_key.as_deref(), None, config::env_var);
 
     let (provider, key) = match args.provider.as_str() {
         "kev" | "local" => (Provider::Kev, String::new()),
-        "typesafe" => (Provider::Typesafe, typesafe_key.ok_or_else(|| {
-            ("no TypeSafe key: set TYPESAFE_API_KEY (or JEV_API_KEY)".to_string(), PROVIDER)
-        })?),
-        "openrouter" => (Provider::Openrouter, openrouter_key.ok_or_else(|| {
-            ("no OpenRouter key: set OPENROUTER_API_KEY".to_string(), PROVIDER)
-        })?),
+        "typesafe" => (
+            Provider::Typesafe,
+            typesafe_key.or(file_key).ok_or_else(|| {
+                ("no TypeSafe key: set TYPESAFE_API_KEY (or JEV_API_KEY)".to_string(), PROVIDER)
+            })?,
+        ),
+        "openrouter" => (
+            Provider::Openrouter,
+            openrouter_key.or(file_key).ok_or_else(|| {
+                ("no OpenRouter key: set OPENROUTER_API_KEY".to_string(), PROVIDER)
+            })?,
+        ),
         "auto" => match (typesafe_key, openrouter_key) {
             (Some(k), _) => (Provider::Typesafe, k),
             (None, Some(k)) => (Provider::Openrouter, k),
-            (None, None) => {
-                return Err((
-                    "no Jev credentials: set TYPESAFE_API_KEY (or JEV_API_KEY), or OPENROUTER_API_KEY".into(),
-                    PROVIDER,
-                ))
-            }
+            (None, None) => match file_key {
+                Some(k) => (Provider::Typesafe, k),
+                None => {
+                    return Err((
+                        "no Jev credentials: set TYPESAFE_API_KEY (or JEV_API_KEY), or OPENROUTER_API_KEY".into(),
+                        PROVIDER,
+                    ))
+                }
+            },
         },
         other => {
             return Err((format!("unknown --provider {other:?} (auto, typesafe, openrouter, kev)"), USAGE))
@@ -513,32 +542,37 @@ fn resolve_provider(args: &Args) -> Result<(Provider, String, String, String), (
         Provider::Openrouter => OPENROUTER_URL,
         Provider::Kev => KEV_URL,
     };
-    Ok((
+    let timeout = args.timeout.or(clank.timeout).unwrap_or(60);
+    if timeout == 0 {
+        return Err(("--timeout must be at least 1".into(), USAGE));
+    }
+    Ok(Route {
         provider,
-        args.model.clone().unwrap_or_else(|| default_model.to_string()),
-        args.base_url.clone().unwrap_or_else(|| default_url.to_string()),
+        model: configured_str(&args.model).or_else(|| configured_str(&clank.model)).unwrap_or_else(|| default_model.to_string()),
+        url: configured_str(&args.base_url).or_else(|| configured_str(&clank.base_url)).unwrap_or_else(|| default_url.to_string()),
         key,
-    ))
+        timeout,
+    })
 }
 
-fn decide(args: &Args, questions: &[Question], state: &str) -> Result<(Value, Provider, String, u128), (String, i32)> {
-    let (provider, model, url, key) = resolve_provider(args)?;
-    let body = body_for(&model, state, questions);
+fn decide(args: &Args, clank: &config::Clank, questions: &[Question], state: &str) -> Result<(Value, Provider, String, u128), (String, i32)> {
+    let route = resolve_provider(args, clank)?;
+    let body = body_for(&route.model, state, questions);
     let agent = ureq::Agent::config_builder()
-        .timeout_global(Some(Duration::from_secs(args.timeout)))
+        .timeout_global(Some(Duration::from_secs(route.timeout)))
         // A provider's 4xx/5xx carries the reason in its body; treat the status as
         // data so that reason can be printed instead of "http status: 422".
         .http_status_as_error(false)
         .build()
         .new_agent();
     let started = Instant::now();
-    let mut request = agent.post(&url).header("Content-Type", "application/json");
-    if provider.needs_key() {
-        request = request.header("Authorization", format!("Bearer {key}"));
+    let mut request = agent.post(&route.url).header("Content-Type", "application/json");
+    if route.provider.needs_key() {
+        request = request.header("Authorization", format!("Bearer {}", route.key));
     }
-    let mut resp = request
-        .send_json(&body)
-        .map_err(|e| (format!("request to {url} failed: {e}"), PROVIDER))?;
+    let mut resp = request.send_json(&body).map_err(|e| {
+        (config::redact(&format!("request to {} failed: {e}", route.url), &route.key), PROVIDER)
+    })?;
     let status = resp.status();
     let text = resp
         .body_mut()
@@ -553,11 +587,12 @@ fn decide(args: &Args, questions: &[Question], state: &str) -> Result<(Value, Pr
                     .find_map(|k| v.get(*k).map(|d| d.to_string()))
             })
             .unwrap_or_else(|| text.trim().chars().take(300).collect());
+        let detail = config::redact(&detail, &route.key);
         return Err((format!("provider returned HTTP {status}: {detail}"), PROVIDER));
     }
     let payload: Value =
-        serde_json::from_str(&text).map_err(|e| (format!("provider returned non-JSON: {e}"), PROVIDER))?;
-    Ok((payload, provider, model, started.elapsed().as_millis()))
+        serde_json::from_str(&text).map_err(|e| (config::redact(&format!("provider returned non-JSON: {e}"), &route.key), PROVIDER))?;
+    Ok((payload, route.provider, route.model, started.elapsed().as_millis()))
 }
 
 // ---------------------------------------------------------------- output
@@ -621,6 +656,14 @@ fn bare_value(answers: &[Answer]) -> String {
 }
 
 fn run(args: Args) -> i32 {
+    let file = match config::load() {
+        Ok(f) => f,
+        Err(e) => {
+            eprintln!("clank-jev: {e}");
+            return USAGE;
+        }
+    };
+    let clank = file.map(|f| f.clank).unwrap_or_default();
     let questions = match questions_from_args(&args) {
         Ok(q) => q,
         Err(e) => {
@@ -637,7 +680,7 @@ fn run(args: Args) -> i32 {
         eprintln!("clank-jev: empty state — pipe the text to decide about");
         return USAGE;
     }
-    let (payload, provider, model, elapsed_ms) = match decide(&args, &questions, &state) {
+    let (payload, provider, model, elapsed_ms) = match decide(&args, &clank, &questions, &state) {
         Ok(v) => v,
         Err((msg, code)) => {
             eprintln!("clank-jev: {msg}");

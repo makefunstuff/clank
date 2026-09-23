@@ -271,7 +271,7 @@ same reasons the decision stage is not a flag:
 | R1 composition | the shell already composes a search with a summary | `clank-web "query" \| clank -m "summarize with citations"` is the whole feature |
 | invariant 3 | a tool round would read the network on an input the pipe cannot show | the query is the invocation, and the results are what the next stage reads |
 | invariant 4 | clank's network is the model endpoint | the search APIs live in the binary whose job is those APIs |
-| R4 no memory | a key and a default provider would become clank configuration | `.clank/config.toml` is read by `clank-web` only; `clank` does not open it |
+| R4 no memory | a search key would become a clank tool setting | `.clank/config.toml` is optional and shared. `clank` and `clank-jev` read `[clank]`. `clank-web` reads `[web]`. A missing file leaves flags and the environment in charge |
 
 `clank --list-tools` stays the four read-only filesystem observers. One
 invocation is one request: no crawl, no JavaScript, no second fetch of a link
@@ -287,10 +287,11 @@ Exit codes are `0` / `1` / `2`, the same classes as clank, and not `clank-jev`'s
 | `2` | usage: bad flags, an empty query, an unknown provider, a config file that does not parse |
 
 An empty result set is a completed search: the stage's job was to return what
-the provider returned. stdout is JSONL (`title`, `url`, `snippet`), or `--text`
-lines of those three fields separated by tabs. The key is an environment
-variable named by the config, never an argument and never a value in the file.
-The shape is in [docs/clank-web.md](docs/clank-web.md).
+the provider returned. stdout is JSONL (`title`, `url`, `snippet`), or
+`--format text` lines of those three fields separated by tabs. The key is an
+environment variable named by `[web.brave]` or `[web.tavily]`, and an inline
+`api_key` is used only when that variable is unset. It is never an argument and
+never printed. The shape is in [docs/clank-web.md](docs/clank-web.md).
 
 ## Admission rules
 

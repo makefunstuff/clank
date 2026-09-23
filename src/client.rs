@@ -81,13 +81,14 @@ pub fn stream_round(
     if let Some(key) = req.api_key {
         request = request.header("Authorization", format!("Bearer {key}"));
     }
-    let mut resp = request
-        .send_json(&body)
-        .map_err(|e| Fail::Model(format!("request to {url} failed: {e}")))?;
+    let mut resp = request.send_json(&body).map_err(|e| {
+        Fail::Model(crate::config::redact(&format!("request to {url} failed: {e}"), req.api_key.unwrap_or("")))
+    })?;
 
     if resp.status() != 200 {
         let mut detail = String::new();
         let _ = resp.body_mut().as_reader().read_to_string(&mut detail);
+        let detail = crate::config::redact(&detail, req.api_key.unwrap_or(""));
         return Err(Fail::Model(format!(
             "model returned HTTP {status}: {detail}",
             status = resp.status()

@@ -142,12 +142,12 @@ fn the_web_stage_contract_is_written_down_and_true() {
     }
     let bin = env!("CARGO_BIN_EXE_clank-web");
     let dir = std::env::temp_dir().join(format!("clank-web-docs-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
-    let cfg = dir.join("config.toml");
-    std::fs::write(&cfg, "provider = \"brave\"\n").unwrap();
-    let cfg = cfg.to_str().unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".clank")).unwrap();
+    std::fs::write(dir.join(".clank/config.toml"), "[web]\ndefault_provider = \"brave\"\n").unwrap();
     let usage = Command::new(bin)
-        .args(["--config", cfg, "--provider", "google", "q"])
+        .current_dir(&dir)
+        .args(["--provider", "google", "q"])
         .env_remove("BRAVE_API_KEY")
         .env_remove("TAVILY_API_KEY")
         .output()
@@ -156,7 +156,8 @@ fn the_web_stage_contract_is_written_down_and_true() {
     assert!(usage.stdout.is_empty(), "usage writes nothing to stdout");
 
     let missing = Command::new(bin)
-        .args(["--config", cfg, "--provider", "brave", "q"])
+        .current_dir(&dir)
+        .args(["--provider", "brave", "q"])
         .env_remove("BRAVE_API_KEY")
         .env_remove("TAVILY_API_KEY")
         .output()
