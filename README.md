@@ -2,8 +2,8 @@
 
 A Rust CLI that is one stage in a pipeline: prompt and context in on argv/stdin,
 the answer on stdout, diagnostics on stderr, a verdict in the exit code. Speaks
-to any OpenAI-compatible endpoint. Sibling `clank-jev` routes and gates —
-compose them; do not fold chat/agent UX into `clank`.
+to any OpenAI-compatible endpoint. Sibling `clank-jev` routes and gates. Sibling
+`clank-web` searches. Compose them; `clank` stays a local-filesystem stage.
 
 ![clank in a shell](docs/images/clank-demo.gif)
 
@@ -15,11 +15,11 @@ Recorded against a live server by `scripts/record-demo.sh`.
 
 ## Install
 
-Package `clank-cli-app` → binaries `clank` and `clank-jev` (package ≠ binary).
-Never `cargo install clank` — that crates.io name is unrelated.
+Package `clank-cli-app` → binaries `clank`, `clank-jev` and `clank-web` (package
+≠ binary). Never `cargo install clank` — that crates.io name is unrelated.
 
 ```sh
-cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev
+cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank, clank-jev, clank-web
 ```
 
 Git fallback:
@@ -38,7 +38,8 @@ export CLANK_MODEL=$(curl -s "$CLANK_BASE_URL/models" | jq -r '.data[0].id')
 clank -m 'reply with exactly: pong'    # -> pong, exit 0
 ```
 
-Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`) yourself.
+Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`, or
+`[clank]` in `.clank/config.toml`) yourself.
 
 ## Harness cost (dated)
 
@@ -68,6 +69,7 @@ Token knobs (`--thinking off`, lower `--max-tokens`, `--no-tools` when piped):
 | [PROTOCOL.md](PROTOCOL.md) | invariants, exit codes, events |
 | [docs/use-cases.md](docs/use-cases.md) | job families, gates, prices |
 | [docs/clank-jev.md](docs/clank-jev.md) | typed routing decisions |
+| [docs/clank-web.md](docs/clank-web.md) | web search and one-URL fetch |
 | [docs/history/](docs/history/README.md) | dated measures and closed research |
 
 
@@ -79,14 +81,17 @@ JSONL event kinds (`--jsonl`): `run`, `item`, `tool_call`, `tool_result`,
 Meanings live in [CHEATSHEET.md](CHEATSHEET.md). Listed so the surface stays
 short without drifting from `--help`.
 
-`clank`: `--api-key`, `--base-url`, `--context`, `--each`, `--json-schema`,
-`--jsonl`, `--list-tools`, `--max-rounds`, `--max-tokens`, `--message`,
-`--model`, `--no-tools`, `--null`, `--quiet`, `--show-thinking`, `--system`,
-`--thinking`, `--timeout`, `--tools`
+`clank`: `--api-key`, `--base-url`, `--config`, `--context`, `--each`,
+`--json-schema`, `--jsonl`, `--list-tools`, `--max-rounds`, `--max-tokens`,
+`--message`, `--model`, `--no-tools`, `--null`, `--quiet`, `--show-thinking`,
+`--system`, `--thinking`, `--timeout`, `--tools`
 
 `clank-jev`: `--ask`, `--base-url`, `--boolean`, `--checks`, `--choice`,
-`--expect`, `--expect-min`, `--json`, `--min-prob`, `--model`, `--print-reason`,
-`--provider`, `--quiet`, `--score`, `--timeout`
+`--config`, `--expect`, `--expect-min`, `--json`, `--min-prob`, `--model`,
+`--print-reason`, `--provider`, `--quiet`, `--score`, `--timeout`
+
+`clank-web`: `--base-url`, `--config`, `--fetch`, `--format`, `--limit`,
+`--provider`, `--quiet`, `--timeout`
 
 ## License
 

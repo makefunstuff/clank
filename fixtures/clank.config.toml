@@ -1,0 +1,24 @@
+# Optional. Read from ./.clank/config.toml in the working directory.
+# --config PATH or CLANK_CONFIG names a different file. Parents are not searched.
+# A missing file leaves flags and the environment in charge.
+# Precedence: flags, then environment, then this file, then built-ins.
+# The key stays in the environment. api_key_env names the variable.
+
+[clank]
+base_url = "http://127.0.0.1:8080/v1"
+model = "local"
+api_key_env = "CLANK_API_KEY"
+timeout = 600
+max_tokens = 8192
+max_rounds = 12
+
+[web]
+default_provider = "brave"
+limit = 5
+format = "jsonl"
+
+[web.brave]
+api_key_env = "BRAVE_API_KEY"
+
+[web.tavily]
+api_key_env = "TAVILY_API_KEY"

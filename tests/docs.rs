@@ -28,6 +28,12 @@ fn jev_flags() -> Vec<String> {
 }
 
 fn flags_of(bin: &str) -> Vec<String> {
+    let flags = parse_long_flags(bin);
+    assert!(flags.len() > 10, "parsed too few flags: {flags:?}");
+    flags
+}
+
+fn parse_long_flags(bin: &str) -> Vec<String> {
     let out = Command::new(bin).arg("--help").output().expect("run --help");
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     let mut flags: Vec<String> = Vec::new();
@@ -43,7 +49,6 @@ fn flags_of(bin: &str) -> Vec<String> {
             }
         }
     }
-    assert!(flags.len() > 10, "parsed too few flags: {flags:?}");
     flags
 }
 
@@ -102,6 +107,71 @@ fn every_clank_jev_flag_is_documented_in_the_reference_docs() {
 }
 
 #[test]
+fn every_clank_web_flag_is_documented_in_the_reference_docs() {
+    let readme = read("README.md");
+    let cheatsheet = read("CHEATSHEET.md");
+    let flags = parse_long_flags(env!("CARGO_BIN_EXE_clank-web"));
+    assert!(flags.len() > 5, "parsed too few flags: {flags:?}");
+    let mut missing: Vec<String> = Vec::new();
+    for flag in flags {
+        for (name, doc) in [("README.md", &readme), ("CHEATSHEET.md", &cheatsheet)] {
+            if !doc.contains(&flag) {
+                missing.push(format!("{flag} in {name}"));
+            }
+        }
+    }
+    assert!(
+        missing.is_empty(),
+        "flags clank-web offers but the docs do not mention: {missing:#?}"
+    );
+}
+
+#[test]
+fn the_web_stage_contract_is_written_down_and_true() {
+    let protocol = read("PROTOCOL.md");
+    assert!(protocol.contains("clank-web"), "PROTOCOL.md must name the web stage");
+    assert!(
+        protocol.contains(".clank/config.toml"),
+        "PROTOCOL.md must say which file holds the web config"
+    );
+    assert!(protocol.contains("CLANK_CONFIG"), "PROTOCOL.md must name the config-path override");
+    assert!(protocol.contains("working directory"), "PROTOCOL.md must say discovery is the working directory");
+    for code in ["0", "1", "2"] {
+        assert!(
+            protocol.contains(&format!("| `{code}` |")),
+            "PROTOCOL.md has no row for clank-web exit code {code}"
+        );
+    }
+    let bin = env!("CARGO_BIN_EXE_clank-web");
+    let dir = std::env::temp_dir().join(format!("clank-web-docs-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join(".clank")).unwrap();
+    std::fs::write(dir.join(".clank/config.toml"), "[web]\ndefault_provider = \"brave\"\n").unwrap();
+    let usage = Command::new(bin)
+        .current_dir(&dir)
+        .args(["--provider", "google", "q"])
+        .env_remove("BRAVE_API_KEY")
+        .env_remove("TAVILY_API_KEY")
+        .env_remove("CLANK_CONFIG")
+        .output()
+        .unwrap();
+    assert_eq!(usage.status.code(), Some(2), "an unknown provider is usage (2)");
+    assert!(usage.stdout.is_empty(), "usage writes nothing to stdout");
+
+    let missing = Command::new(bin)
+        .current_dir(&dir)
+        .args(["--provider", "brave", "q"])
+        .env_remove("BRAVE_API_KEY")
+        .env_remove("TAVILY_API_KEY")
+        .env_remove("CLANK_CONFIG")
+        .output()
+        .unwrap();
+    assert_eq!(missing.status.code(), Some(1), "a missing key is 1");
+    assert!(missing.stdout.is_empty(), "a failed search writes nothing to stdout");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn the_decision_stage_contract_is_written_down_and_true() {
     // Its exit codes are a contract for scripts, so they must be in PROTOCOL.md
     // *and* be the ones the binary actually returns.
@@ -126,7 +196,8 @@ fn the_decision_stage_contract_is_written_down_and_true() {
         cmd.env_remove("TYPESAFE_API_KEY")
             .env_remove("JEV_API_KEY")
             .env_remove("JEV_CLI_API_KEY")
-            .env_remove("OPENROUTER_API_KEY");
+            .env_remove("OPENROUTER_API_KEY")
+            .env_remove("CLANK_CONFIG");
     };
     let mut cmd = Command::new(bin);
     cmd.args(["--ask", "which?", "--choice", "a,b", "--provider", "typesafe"])

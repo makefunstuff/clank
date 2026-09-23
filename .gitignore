@@ -2,3 +2,5 @@ target/
 local/
 dist/
 __pycache__/
+# A live config is per machine. The sample is fixtures/clank.config.toml.
+.clank/config.toml

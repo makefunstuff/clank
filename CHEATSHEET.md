@@ -6,19 +6,23 @@ context is exactly what was piped.
 
 - [PROTOCOL.md](PROTOCOL.md) — invariants, request sequence, event set, exit
   codes
-- [README.md](README.md) — install, `clank-jev`, containers, the verified list
+- [README.md](README.md) — install, `clank-jev`, `clank-web`, containers
 - [docs/use-cases.md](docs/use-cases.md) — jobs with their gates and prices
 - [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) —
   local models on a 16 GB Mac
 
-Set `CLANK_BASE_URL` and `CLANK_MODEL` (flags override `$CLANK_*`). Do not rely
-on a laptop-only built-in default — point at your OpenAI-compatible server.
+Set `CLANK_BASE_URL` and `CLANK_MODEL`, or `[clank]` in `./.clank/config.toml`.
+That file is the working directory only. `--config PATH` or `CLANK_CONFIG` names
+a different file. Precedence is flags, then the environment, then the file, then
+built-ins. There is no built-in model or base URL. Web search keys live under
+`[web]` and are read by `clank-web`. The key stays in the environment;
+`api_key_env` names the variable.
 
 
 ## Install
 
 ```sh
-cargo install clank-cli-app --locked   # package ≠ binary → clank / clank-jev
+cargo install clank-cli-app --locked   # package ≠ binary → clank / clank-jev / clank-web
 # fallback: cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
 ```
 
@@ -38,6 +42,9 @@ Never `cargo install clank` (unrelated crates.io crate).
 | `1` | model/server/IO failure, a truncated answer, an empty answer, or any failed `--each` item |
 | `2` | usage |
 | `3` | `clank-jev` only: provider, network or credential failure |
+
+`clank-web` uses `0` / `1` / `2`. A provider, network or credential failure is
+`1`. An empty result set is `0`.
 
 SIGPIPE is restored, so `clank … | head` dies cleanly. Output is never coloured:
 there is no `NO_COLOR` to honour, and `-q` silences the breadcrumbs.
@@ -101,6 +108,11 @@ printf '%s' "$text" | clank-jev --ask 'Is this a refund request?' --boolean     
 printf '%s' "$trace" | clank-jev --checks fixtures/checks-verification.json --min-prob 0.6   # exit 1 = a claim conflicts with the tool results
 clank-jev --provider kev --ask 'Which team?' --choice billing,shipping < ticket.txt           # local, no credentials
 
+# web search is its own stage: results on stdout, then a summary
+clank-web "rust sigpipe default disposition" | clank -m "summarize with citations"
+printf '%s\n' "$query" | clank-web | clank --no-tools -m "summarize with citations"
+clank-web --fetch https://example.com | clank -m "one paragraph: what is this page?"
+
 # structured output: one request, grammar enforced by the server
 clank -m "…" --json-schema @schema.json | jq -er .
 clank --thinking off --json-schema '{"type":"object","properties":{"kind":{"type":"string","enum":["code","docs"]}},"required":["kind"]}' -m "Classify: code or docs."
@@ -135,15 +147,53 @@ Credentials come from the environment only.
 | `--expect-min N` | exit 1 unless an ordered decision is at least this level |
 | `--print-reason` | print the closed-choice reason instead of the value |
 | `--provider NAME` | `auto`, `typesafe`, `openrouter`, `kev` |
-| `--model ID` | defaults per provider: `jev-latest`, `typesafe/jev-1.13`, `kev-latest` |
-| `--base-url URL` | move the endpoint (a local `kev`, a proxy, a stub) |
-| `--timeout SECS` | per-request timeout, default 60 |
+| `--model ID` | provider default, or `[clank].model` when the flag is absent |
+| `--base-url URL` | provider endpoint, or `[clank].base_url` when the flag is absent |
+| `--config PATH` | config file; otherwise `CLANK_CONFIG`, otherwise `./.clank/config.toml` |
+| `--timeout SECS` | per-request timeout; otherwise `[clank].timeout`, otherwise 60 |
 | `--json` | the full result object instead of the bare value |
 | `-q` / `--quiet` | no diagnostic line on stderr |
 
 `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) selects the TypeSafe
 route; `OPENROUTER_API_KEY` selects OpenRouter's Decisions endpoint;
-`--provider kev` needs no credential.
+`--provider kev` needs no credential. `[clank].api_key_env` is a fallback when
+those are unset. `[web]` is left alone. `CLANK_MODEL` and `CLANK_BASE_URL`
+belong to `clank`.
+
+## `clank-web` flags
+
+One search, or one GET. stdout is JSONL (`title`, `url`, `snippet`); stderr is
+diagnostics. The schema and the sample file are in
+[docs/clank-web.md](docs/clank-web.md).
+
+| flag | meaning |
+|---|---|
+| `--provider NAME` | `brave` (default) or `tavily`; `[web].default_provider` overrides the built-in when the flag is absent |
+| `--limit N` | 1..=20, default 5; overrides `[web].limit` |
+| `--format jsonl\|text` | JSONL, or `title<TAB>url<TAB>snippet`; default `jsonl` |
+| `--base-url URL` | replace the provider endpoint (a proxy, a stub). Ignores `[clank].base_url` |
+| `--config PATH` | config file; otherwise `CLANK_CONFIG`, otherwise `./.clank/config.toml` |
+| `--fetch URL` | GET one `http` or `https` URL; no search and no key. Body cap 524288 bytes |
+| `--timeout SECS` | per-request timeout, default 30 |
+| `-q` / `--quiet` | no result-count line on stderr |
+
+`BRAVE_API_KEY` is the Brave subscription token (`X-Subscription-Token`).
+`TAVILY_API_KEY` is sent as `Authorization: Bearer`. `[web.brave].api_key_env`
+and `[web.tavily].api_key_env` name a different variable. The key stays in the
+environment. The default provider stays Brave when only `TAVILY_API_KEY` is set.
+
+```toml
+[web]
+default_provider = "brave"
+limit = 5
+format = "jsonl"
+
+[web.brave]
+api_key_env = "BRAVE_API_KEY"
+
+[web.tavily]
+api_key_env = "TAVILY_API_KEY"
+```
 
 ## Flags
 
@@ -162,10 +212,11 @@ route; `OPENROUTER_API_KEY` selects OpenRouter's Decisions endpoint;
 | `--list-tools` | | print the tool definitions as JSON, no model call |
 | `--jsonl` / `-j` | | JSONL events on stdout instead of text |
 | `-q` / `--quiet` | | suppress stderr breadcrumbs |
-| `--model` / `--base-url` / `--api-key` | `CLANK_MODEL` / `CLANK_BASE_URL` / `CLANK_API_KEY` | endpoint |
-| `--timeout N` | `CLANK_TIMEOUT` | per-request timeout, seconds (default 600) |
-| `--max-tokens N` | | completion cap (default 8192) |
-| `--max-rounds N` | | tool-call rounds with `--tools` (default 12) |
+| `--config PATH` | `CLANK_CONFIG` | config file; otherwise `./.clank/config.toml` in the working directory |
+| `--model` / `--base-url` / `--api-key` | `CLANK_MODEL` / `CLANK_BASE_URL` / `CLANK_API_KEY` | endpoint; otherwise `[clank]` in that file. No built-in model or base URL |
+| `--timeout N` | `CLANK_TIMEOUT` | per-request timeout, seconds; otherwise `[clank].timeout` (default 600) |
+| `--max-tokens N` | | completion cap; otherwise `[clank].max_tokens` (default 8192) |
+| `--max-rounds N` | | tool-call rounds with `--tools`; otherwise `[clank].max_rounds` (default 12) |
 
 `--json-schema` and `--system` accept `@path` to read the payload from a file.
 

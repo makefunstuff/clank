@@ -86,6 +86,7 @@ fn run_provider(args: &[&str], state: &str, url: &str, key: Option<&str>, provid
         .env_remove("JEV_API_KEY")
         .env_remove("JEV_CLI_API_KEY")
         .env_remove("OPENROUTER_API_KEY")
+        .env_remove("CLANK_CONFIG")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

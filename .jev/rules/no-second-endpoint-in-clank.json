@@ -4,7 +4,7 @@
     {
       "id": "no-second-endpoint-in-clank",
       "title": "One endpoint, and only one",
-      "text": "PROTOCOL invariant 4 and 'no second wire protocol': clank speaks `/v1/chat/completions` on the endpoint the caller configured, and reaches nothing else — no version check, no telemetry, no second host. `clank-jev` owns the decision protocol, which is why this rule does not claim `src/jev.rs`.",
+      "text": "PROTOCOL invariant 4 and 'no second wire protocol': clank speaks `/v1/chat/completions` on the endpoint the caller configured, and reaches nothing else — no version check, no telemetry, no second host. `clank-jev` owns the decision protocol and `clank-web` owns the search providers, which is why this rule does not treat `src/jev.rs` or `src/web.rs` as a second endpoint inside clank.",
       "severity": "warning",
       "applies_to": ["src/**/*.rs"],
       "inspection": { "kind": "regex", "pattern": "https?://" },
@@ -12,7 +12,7 @@
         "question": "Is this a network destination other than the configurable base URL — a hardcoded host clank would reach without the caller asking for it?",
         "criteria": {
           "true": "it is a second destination, or a URL that is not the base URL the caller can override",
-          "false": "it is the default chat endpoint (which `--base-url` and `CLANK_BASE_URL` replace), one of the provider endpoints inside `src/jev.rs` whose whole job is the decision protocol, a doc comment, or a string that is never requested"
+          "false": "clank has no hardcoded chat host: the caller sets `--base-url`, `CLANK_BASE_URL`, or `[clank].base_url`. Provider endpoints inside `src/jev.rs` or `src/web.rs` are that binary's protocol and `--base-url` replaces them. A doc comment or a string that is never requested is not a destination"
         },
         "min_probability": 0.8
       },

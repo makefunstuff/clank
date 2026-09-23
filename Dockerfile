@@ -1,4 +1,4 @@
-# The whole harness: both binaries, a base image, and whatever you mount.
+# The whole harness: clank, clank-jev, clank-web, a base image, and whatever you mount.
 #
 # Build:  docker build -t clank .
 # Use:    git log -1 | docker run --rm -i --network=host \
@@ -19,5 +19,8 @@ RUN cargo build --release
 FROM ubuntu:24.04
 COPY --from=build /src/target/release/clank /usr/local/bin/clank
 COPY --from=build /src/target/release/clank-jev /usr/local/bin/clank-jev
+COPY --from=build /src/target/release/clank-web /usr/local/bin/clank-web
 ENTRYPOINT ["/usr/local/bin/clank"]
-# `clank-jev` is in the image too: docker run --rm -i clank-jev --provider kev …
+# `clank-jev` and `clank-web` are in the image too:
+#   docker run --rm -i clank-jev --provider kev …
+#   docker run --rm clank-web "query"

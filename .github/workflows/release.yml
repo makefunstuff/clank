@@ -74,21 +74,22 @@ jobs:
       - name: Build
         run: cargo build --release --locked --target ${{ matrix.target }}
 
-      # The archive is only worth publishing if the two binaries inside it run. Both are
+      # The archive is only worth publishing if the binaries inside it run. They are
       # native here, so this is the shipped artifact answering, not a stand-in.
       - name: Smoke the binaries
         run: |
           cd target/${{ matrix.target }}/release
           ./clank --version
           ./clank-jev --version
+          ./clank-web --version
           ./clank --list-tools | python3 -c 'import json,sys; tools = json.load(sys.stdin); assert len(tools) == 4, tools; print("4 read-only observers")'
 
       - name: Package the archive and its checksum
         run: |
           name="clank-${{ github.ref_name }}-${{ matrix.target }}"
           mkdir -p "dist/$name"
-          cp "target/${{ matrix.target }}/release/clank" "target/${{ matrix.target }}/release/clank-jev" "dist/$name/"
-          cp README.md LICENSE CHEATSHEET.md PROTOCOL.md "dist/$name/"
+          cp "target/${{ matrix.target }}/release/clank" "target/${{ matrix.target }}/release/clank-jev" "target/${{ matrix.target }}/release/clank-web" "dist/$name/"
+          cp README.md LICENSE CHEATSHEET.md PROTOCOL.md fixtures/clank.config.toml "dist/$name/"
           tar -C dist -czf "dist/$name.tar.gz" "$name"
           cd dist
           python3 -c "import hashlib; d=hashlib.sha256(open('$name.tar.gz','rb').read()).hexdigest(); print(d + '  $name.tar.gz')" > "$name.tar.gz.sha256"

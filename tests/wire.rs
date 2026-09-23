@@ -160,6 +160,7 @@ fn clank(args: &[&str], stdin: &str) -> Run {
         .env_remove("CLANK_DEBUG")
         .env_remove("CLANK_SYSTEM")
         .env_remove("CLANK_API_KEY")
+        .env_remove("CLANK_CONFIG")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
