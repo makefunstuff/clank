@@ -239,8 +239,8 @@ agent panes, wait with `herdr agent wait <TARGET> --until <status>`.
 ## Troubleshooting
 
 **Connection refused, or cannot reach `CLANK_BASE_URL`.** stderr is
-`request to <url>/chat/completions failed: …` and the exit code is 1. The
-server process is down, or the URL is missing the `/v1` path (`clank` appends
+`request to <url>/chat/completions failed: …` and the exit code is 1. The server
+process is down, or the URL is missing the `/v1` path (`clank` appends
 `/chat/completions`).
 
 ```sh
