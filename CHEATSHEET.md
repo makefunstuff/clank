@@ -6,7 +6,7 @@ context is exactly what was piped.
 
 - [PROTOCOL.md](PROTOCOL.md) — invariants, request sequence, event set, exit
   codes
-- [README.md](README.md) — install, `clank-jev`, containers, the verified list
+- [README.md](README.md) — install, `clank-jev`, `clank-web`, containers
 - [docs/use-cases.md](docs/use-cases.md) — jobs with their gates and prices
 - [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) —
   local models on a 16 GB Mac
@@ -18,7 +18,7 @@ on a laptop-only built-in default — point at your OpenAI-compatible server.
 ## Install
 
 ```sh
-cargo install clank-cli-app --locked   # package ≠ binary → clank / clank-jev
+cargo install clank-cli-app --locked   # package ≠ binary → clank / clank-jev / clank-web
 # fallback: cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
 ```
 
@@ -38,6 +38,9 @@ Never `cargo install clank` (unrelated crates.io crate).
 | `1` | model/server/IO failure, a truncated answer, an empty answer, or any failed `--each` item |
 | `2` | usage |
 | `3` | `clank-jev` only: provider, network or credential failure |
+
+`clank-web` uses `0` / `1` / `2`. A provider, network or credential failure is
+`1`. An empty result set is `0`.
 
 SIGPIPE is restored, so `clank … | head` dies cleanly. Output is never coloured:
 there is no `NO_COLOR` to honour, and `-q` silences the breadcrumbs.
@@ -101,6 +104,11 @@ printf '%s' "$text" | clank-jev --ask 'Is this a refund request?' --boolean     
 printf '%s' "$trace" | clank-jev --checks fixtures/checks-verification.json --min-prob 0.6   # exit 1 = a claim conflicts with the tool results
 clank-jev --provider kev --ask 'Which team?' --choice billing,shipping < ticket.txt           # local, no credentials
 
+# web search is its own stage: results on stdout, then a summary
+clank-web "rust sigpipe default disposition" | clank -m "summarize with citations"
+printf '%s\n' "$query" | clank-web | clank --no-tools -m "summarize with citations"
+clank-web --fetch https://example.com | clank -m "one paragraph: what is this page?"
+
 # structured output: one request, grammar enforced by the server
 clank -m "…" --json-schema @schema.json | jq -er .
 clank --thinking off --json-schema '{"type":"object","properties":{"kind":{"type":"string","enum":["code","docs"]}},"required":["kind"]}' -m "Classify: code or docs."
@@ -144,6 +152,39 @@ Credentials come from the environment only.
 `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) selects the TypeSafe
 route; `OPENROUTER_API_KEY` selects OpenRouter's Decisions endpoint;
 `--provider kev` needs no credential.
+
+## `clank-web` flags
+
+One search, or one GET. stdout is JSONL (`title`, `url`, `snippet`); stderr is
+diagnostics. The schema and the example file are in
+[docs/clank-web.md](docs/clank-web.md).
+
+| flag | meaning |
+|---|---|
+| `--provider NAME` | `brave` or `tavily`; otherwise `.clank/config.toml`, otherwise the one key that is set |
+| `--max-results N` | 1..=20, default 5; overrides `max_results` in the config |
+| `--config PATH` | config file; default `.clank/config.toml` in the working directory, when it exists |
+| `--base-url URL` | replace the provider endpoint (a proxy, a stub) |
+| `--fetch URL` | GET one `http` or `https` URL; no search and no key |
+| `--max-bytes N` | fetched body cap, default 524288, max 8388608 |
+| `--timeout SECS` | per-request timeout, default 30 |
+| `--text` | `title<TAB>url<TAB>snippet` instead of JSONL |
+| `-q` / `--quiet` | no result-count line on stderr |
+
+`BRAVE_API_KEY` is the Brave subscription token (`X-Subscription-Token`).
+`TAVILY_API_KEY` is sent as `Authorization: Bearer`. The config can name a
+different variable; it cannot hold the key. `clank` does not read the file.
+
+```toml
+provider = "brave"
+max_results = 5
+
+[brave]
+api_key_env = "BRAVE_API_KEY"
+
+[tavily]
+api_key_env = "TAVILY_API_KEY"
+```
 
 ## Flags
 

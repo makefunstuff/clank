@@ -22,6 +22,8 @@ stage inside it.
 |---|---|
 | read a file | `cat f \| clank -m "…"`, `sed -n '10,40p' f \| clank -m "…"` |
 | search | `rg -n "pat" \| clank -m "…"`, `rg -n "pat" . \| clank --each -m "one line: is this match a problem?"` |
+| search the web | `clank-web "query" \| clank -m "summarize with citations"` |
+| read one page | `clank-web --fetch URL \| clank -m "…"` |
 | see what changed | `git diff \| clank -m "…"` |
 | look twice / follow up | `clank --jsonl -m "…" \| clank -m "continue"` |
 | fan out over N things | `rg -l … \| clank --each`, `find … -print0 \| clank --each -0` |
@@ -258,6 +260,38 @@ default. The reason pattern — a closed-choice reason decided in the same reque
 as the value — is taken from `seanperkins/omp-jev-watchdog`; the vocabulary
 lives in the checks file, not in the binary.
 
+## Why web search is a separate binary
+
+`clank-web` (a third `[[bin]]` in this crate) runs one search query, or fetches
+one URL, and writes result lines. It is deliberately not a clank tool, for the
+same reasons the decision stage is not a flag:
+
+| rule | why a web tool inside clank would break it | why the sibling binary does not |
+|---|---|---|
+| R1 composition | the shell already composes a search with a summary | `clank-web "query" \| clank -m "summarize with citations"` is the whole feature |
+| invariant 3 | a tool round would read the network on an input the pipe cannot show | the query is the invocation, and the results are what the next stage reads |
+| invariant 4 | clank's network is the model endpoint | the search APIs live in the binary whose job is those APIs |
+| R4 no memory | a key and a default provider would become clank configuration | `.clank/config.toml` is read by `clank-web` only; `clank` does not open it |
+
+`clank --list-tools` stays the four read-only filesystem observers. One
+invocation is one request: no crawl, no JavaScript, no second fetch of a link
+the page named. `--fetch` is that one GET.
+
+Exit codes are `0` / `1` / `2`, the same classes as clank, and not `clank-jev`'s
+`3`:
+
+| code | meaning |
+|---|---|
+| `0` | the search or fetch completed and the results were written, including an empty result set |
+| `1` | the request did not complete: network, an HTTP error, a missing key, or a body that is not the provider's JSON |
+| `2` | usage: bad flags, an empty query, an unknown provider, a config file that does not parse |
+
+An empty result set is a completed search: the stage's job was to return what
+the provider returned. stdout is JSONL (`title`, `url`, `snippet`), or `--text`
+lines of those three fields separated by tabs. The key is an environment
+variable named by the config, never an argument and never a value in the file.
+The shape is in [docs/clank-web.md](docs/clank-web.md).
+
 ## Admission rules
 
 Composition is the criterion. Before adding anything, answer these in order:
@@ -276,6 +310,7 @@ Composition is the criterion. Before adding anything, answer these in order:
 | want | where it goes |
 |---|---|
 | searching, reading, listing for the model | the pipe — `rg`, `cat`, `sed`, `git diff` (see the table above) |
+| web search, or fetching one URL | `clank-web`; clank's tools stay on the local filesystem |
 | fan-out over many inputs, in parallel | `xargs -P` / `parallel`, above clank |
 | retries | `until` / a wrapper in the shell, or the `error` events as a retry list |
 | state across runs | re-feed the trace (`-c trace.jsonl`) or a file the shell keeps |
@@ -307,8 +342,9 @@ that a schema and tools never share a request, that the pipe is still context
 when `-c` is used, that a truncated or empty answer exits `1`, that `--each`
 frames one answer per item and shares the prompt prefix, that a failed item is
 reported without hiding the others, and that the exit codes match the table
-above. `tests/docs.rs` guards this document against drift: every flag the binary
-offers must appear in the reference docs, every event type listed in
-`src/context.rs` must have a row in the event table, and every file this repo's
-docs link to must exist. Live model behaviour is recorded in the README's
-*Verified* section.
+above. `tests/web.rs` drives `clank-web` against a stub and checks the request,
+the JSONL, and exits `0`, `1` and `2`. `tests/docs.rs` guards this document
+against drift: every flag the binary offers must appear in the reference docs,
+every event type listed in `src/context.rs` must have a row in the event table,
+and every file this repo's docs link to must exist. Live model behaviour is
+recorded in the README's *Verified* section.

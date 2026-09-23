@@ -19,10 +19,10 @@ says where the project is, what is open, and how to check any of it.
    rules edit, or `jev inspect <file> --force` with `JEV_DECIDE_BASE_URL`
    pointed at a local `kev`.
 2. **crates.io publish is gated, not automatic yet.** GitHub release `v0.1.0` is
-   out. The package is renamed to `clank-cli-app` (binaries stay `clank` /
-   `clank-jev`). CI dry-runs `cargo publish --locked` on every PR; a real
-   publish is `workflow_dispatch` only until one manual publish has landed — do
-   not trust auto tag→crates.io on the first renamed tag.
+   out. The package is renamed to `clank-cli-app` (binaries stay `clank`,
+   `clank-jev` and `clank-web`). CI dry-runs `cargo publish --locked` on every
+   PR; a real publish is `workflow_dispatch` only until one manual publish has
+   landed — do not trust auto tag→crates.io on the first renamed tag.
 3. **Whether to keep the 2026-09-20 splits**: `docs/clank-jev.md` (out of
    README) and `docs/history/` (closed records). Both are reversible with
    `git mv`.
@@ -56,13 +56,17 @@ says where the project is, what is open, and how to check any of it.
 
 - `clank` 0.1.0: one prompt, one request, one answer — the six invariants in
   PROTOCOL.md. `clank-jev` 0.1.0: typed decisions for routing, providers
-  `typesafe`, `openrouter`, `kev`.
-- 81 tests (`cargo test`), all against stub servers: no model, no key, no
-  network. `tests/wire.rs` (24, the protocol), `tests/jev.rs` (10, the sibling),
-  `tests/docs.rs` (6, docs vs code), `tests/rules.rs` (3, the rules themselves),
-  plus 38 unit tests in `src/`.
+  `typesafe`, `openrouter`, `kev`. `clank-web`: one search or one fetch,
+  providers `brave` and `tavily`, config in `.clank/config.toml` read by that
+  binary only.
+- 100 tests (`cargo test`), all against stub servers: no model, no key, no
+  network. `tests/wire.rs` (24, the protocol), `tests/jev.rs` (10, the decision
+  stage), `tests/jev_ci_stub.rs` (1), `tests/web.rs` (10, the search stage),
+  `tests/docs.rs` (8, docs vs code), `tests/rules.rs` (3, the rules themselves),
+  plus 44 unit tests in `src/`.
 - Package name on crates.io is `clank-cli-app`; the installed binaries remain
-  `clank` and `clank-jev`. Install: `cargo install clank-cli-app --locked`.
+  `clank`, `clank-jev` and `clank-web`. Install:
+  `cargo install clank-cli-app --locked`.
 - CI on every push and pull request: warnings are errors, `cargo test`
   (including `tests/jev_ci_stub.rs`, which drives `clank-jev` against a local
   stub — no secret and no provider), the docs wrapping check, and

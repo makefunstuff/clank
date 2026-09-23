@@ -2,3 +2,5 @@ target/
 local/
 dist/
 __pycache__/
+# clank-web reads this from the working directory. The example is config.example.toml.
+.clank/config.toml

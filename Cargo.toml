@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 license = "MIT"
 repository = "https://github.com/makefunstuff/clank"
-description = "Minimal unix-style local-inference harness: stdin/stdout CLI with read-only filesystem tools"
+description = "Minimal unix-style local-inference harness: stdin/stdout CLI with read-only filesystem tools, plus sibling stages for decisions and web search"
 readme = "README.md"
 
 [[bin]]
@@ -17,6 +17,12 @@ path = "src/main.rs"
 name = "clank-jev"
 path = "src/jev.rs"
 
+# Web search stage: one query in, result lines out. A separate binary so clank's
+# tools stay on the local filesystem (see PROTOCOL.md).
+[[bin]]
+name = "clank-web"
+path = "src/web.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
 serde = { version = "1", features = ["derive"] }
@@ -24,3 +30,4 @@ serde_json = "1"
 ureq = { version = "3", features = ["json"] }
 regex = "1"
 libc = "0.2"
+toml = "0.8"

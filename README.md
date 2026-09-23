@@ -2,8 +2,8 @@
 
 A Rust CLI that is one stage in a pipeline: prompt and context in on argv/stdin,
 the answer on stdout, diagnostics on stderr, a verdict in the exit code. Speaks
-to any OpenAI-compatible endpoint. Sibling `clank-jev` routes and gates —
-compose them; do not fold chat/agent UX into `clank`.
+to any OpenAI-compatible endpoint. Sibling `clank-jev` routes and gates. Sibling
+`clank-web` searches. Compose them; `clank` stays a local-filesystem stage.
 
 ![clank in a shell](docs/images/clank-demo.gif)
 
@@ -15,11 +15,11 @@ Recorded against a live server by `scripts/record-demo.sh`.
 
 ## Install
 
-Package `clank-cli-app` → binaries `clank` and `clank-jev` (package ≠ binary).
-Never `cargo install clank` — that crates.io name is unrelated.
+Package `clank-cli-app` → binaries `clank`, `clank-jev` and `clank-web` (package
+≠ binary). Never `cargo install clank` — that crates.io name is unrelated.
 
 ```sh
-cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank and clank-jev
+cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank, clank-jev, clank-web
 ```
 
 Git fallback:
@@ -68,6 +68,7 @@ Token knobs (`--thinking off`, lower `--max-tokens`, `--no-tools` when piped):
 | [PROTOCOL.md](PROTOCOL.md) | invariants, exit codes, events |
 | [docs/use-cases.md](docs/use-cases.md) | job families, gates, prices |
 | [docs/clank-jev.md](docs/clank-jev.md) | typed routing decisions |
+| [docs/clank-web.md](docs/clank-web.md) | web search and one-URL fetch |
 | [docs/history/](docs/history/README.md) | dated measures and closed research |
 
 
@@ -87,6 +88,9 @@ short without drifting from `--help`.
 `clank-jev`: `--ask`, `--base-url`, `--boolean`, `--checks`, `--choice`,
 `--expect`, `--expect-min`, `--json`, `--min-prob`, `--model`, `--print-reason`,
 `--provider`, `--quiet`, `--score`, `--timeout`
+
+`clank-web`: `--base-url`, `--config`, `--fetch`, `--max-bytes`, `--max-results`,
+`--provider`, `--quiet`, `--text`, `--timeout`
 
 ## License
 

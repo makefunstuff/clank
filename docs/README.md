@@ -4,6 +4,7 @@
 |---|---|
 | [use-cases.md](use-cases.md) | jobs built out of the stage: the command, the gate that says it worked, the price |
 | [clank-jev.md](clank-jev.md) | the sibling binary: providers, reason sets, gates, exit codes, six composed examples |
+| [clank-web.md](clank-web.md) | the sibling binary: one web search or one fetched URL, providers, config, exit codes |
 | [macbook-omlx-local-inference.md](macbook-omlx-local-inference.md) | research notes (local Mac / oMLX): model picks and probes — not required for first run |
 | [images/clank-demo.gif](images/clank-demo.gif) | the README's demo, a real session recorded by `scripts/record-demo.sh` (VHS tape `scripts/demo.tape`) |
 | [history/](history/README.md) | closed research and review records, kept because later documents cite them |
