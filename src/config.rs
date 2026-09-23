@@ -47,13 +47,22 @@ pub struct Web {
     pub format: Option<String>,
     pub brave: ProviderKeys,
     pub tavily: ProviderKeys,
+    pub firecrawl: ProviderKeys,
+    pub searxng: ProviderKeys,
+    pub exa: ProviderKeys,
+    pub perplexity: ProviderKeys,
 }
+
+/// `--provider` and `[web].default_provider` accept these names, in this order.
+pub const WEB_PROVIDERS: &[&str] = &["brave", "tavily", "firecrawl", "searxng", "exa", "perplexity"];
 
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProviderKeys {
     pub api_key_env: Option<String>,
     pub api_key: Option<String>,
+    /// Request URL for this provider when `--base-url` is absent. Not `[clank].base_url`.
+    pub base_url: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -121,8 +130,11 @@ fn validate(raw: &Raw) -> Result<(), String> {
         return Err("[clank].max_rounds must be at least 1".into());
     }
     if let Some(name) = raw.web.default_provider.as_deref() {
-        if !matches!(name, "brave" | "tavily") {
-            return Err(format!("[web].default_provider {name:?} is unknown (brave, tavily)"));
+        if !WEB_PROVIDERS.contains(&name) {
+            return Err(format!(
+                "[web].default_provider {name:?} is unknown ({})",
+                WEB_PROVIDERS.join(", ")
+            ));
         }
     }
     if let Some(n) = raw.web.limit {
@@ -135,9 +147,23 @@ fn validate(raw: &Raw) -> Result<(), String> {
             return Err(format!("[web].format {fmt:?} must be jsonl or text"));
         }
     }
-    for (label, section) in [("[web.brave]", &raw.web.brave), ("[web.tavily]", &raw.web.tavily)] {
+    for (label, section) in [
+        ("[web.brave]", &raw.web.brave),
+        ("[web.tavily]", &raw.web.tavily),
+        ("[web.firecrawl]", &raw.web.firecrawl),
+        ("[web.searxng]", &raw.web.searxng),
+        ("[web.exa]", &raw.web.exa),
+        ("[web.perplexity]", &raw.web.perplexity),
+    ] {
         if let Some(name) = section.api_key_env.as_deref() {
             env_name(&format!("{label}.api_key_env"), name)?;
+        }
+        if let Some(url) = section.base_url.as_deref() {
+            let url = url.trim();
+            nonblank(&format!("{label}.base_url"), url)?;
+            if !http_url(url) {
+                return Err(format!("{label}.base_url {url:?} must be an http or https URL"));
+            }
         }
     }
     Ok(())
@@ -239,6 +265,12 @@ mod tests {
         assert_eq!(cfg.web.format.as_deref(), Some("jsonl"));
         assert_eq!(cfg.web.brave.api_key_env.as_deref(), Some("BRAVE_API_KEY"));
         assert_eq!(cfg.web.tavily.api_key_env.as_deref(), Some("TAVILY_API_KEY"));
+        assert_eq!(cfg.web.firecrawl.api_key_env.as_deref(), Some("FIRECRAWL_API_KEY"));
+        assert!(cfg.web.firecrawl.base_url.is_none(), "the cloud URL stays the built-in");
+        assert_eq!(cfg.web.searxng.api_key_env.as_deref(), Some("SEARXNG_API_KEY"));
+        assert_eq!(cfg.web.searxng.base_url.as_deref(), Some("http://127.0.0.1:8888/search"));
+        assert_eq!(cfg.web.exa.api_key_env.as_deref(), Some("EXA_API_KEY"));
+        assert_eq!(cfg.web.perplexity.api_key_env.as_deref(), Some("PERPLEXITY_API_KEY"));
         assert!(!file.contains("40583"));
         assert!(!file.contains("qwen"));
     }
@@ -256,6 +288,10 @@ mod tests {
         assert!(parse("[clank]\ntimeout = 0\n").is_err());
         assert!(parse("[clank]\nbase_url = \"not a url\"\n").is_err());
         assert!(parse("[web.brave]\napi_key_env = \"not a name\"\n").is_err());
+        assert!(parse("[web]\ndefault_provider = \"searxng\"\n").is_ok());
+        assert!(parse("[web.exa]\napi_key_env = \"EXA_API_KEY\"\n").is_ok());
+        assert!(parse("[web.searxng]\nbase_url = \"ftp://nope\"\n").is_err());
+        assert!(parse("[web.firecrawl]\nbase_url = \"\"\n").is_err());
         let err = parse("api_key = \"secret\"\n").unwrap_err();
         assert!(err.contains("unknown field"), "{err}");
     }

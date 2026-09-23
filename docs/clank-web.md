@@ -60,6 +60,8 @@ names environment variables. It does not contain a key.
 # A missing file leaves flags and the environment in charge.
 # Precedence: flags, then environment, then this file, then built-ins.
 # The key stays in the environment. api_key_env names the variable.
+# base_url is that provider's request URL, not [clank].base_url.
+# SearXNG has no built-in URL. A base_url makes a local key optional.
 
 [clank]
 base_url = "http://127.0.0.1:8080/v1"
@@ -79,6 +81,20 @@ api_key_env = "BRAVE_API_KEY"
 
 [web.tavily]
 api_key_env = "TAVILY_API_KEY"
+
+[web.firecrawl]
+api_key_env = "FIRECRAWL_API_KEY"
+
+[web.searxng]
+api_key_env = "SEARXNG_API_KEY"
+# Replace with your instance's JSON search URL.
+base_url = "http://127.0.0.1:8888/search"
+
+[web.exa]
+api_key_env = "EXA_API_KEY"
+
+[web.perplexity]
+api_key_env = "PERPLEXITY_API_KEY"
 ```
 
 `[web]` keys belong above `[web.brave]`. In TOML, a key after a table is part of
@@ -89,16 +105,23 @@ that table.
 | `[clank].base_url` / `model` | chat endpoint for `clank` and `clank-jev`, under the flags and `CLANK_BASE_URL` / `CLANK_MODEL` |
 | `[clank].api_key_env` | variable holding the chat key; `CLANK_API_KEY` and `--api-key` win |
 | `[clank].timeout` / `max_tokens` / `max_rounds` | under the flags (and `CLANK_TIMEOUT`) and above 600 / 8192 / 12 |
-| `[web].default_provider` | `brave` (the built-in) or `tavily`; `--provider` wins |
+| `[web].default_provider` | `brave` (the built-in), `tavily`, `firecrawl`, `searxng`, `exa`, or `perplexity`; `--provider` wins |
 | `[web].limit` | 1..=20, built-in 5; `--limit` wins |
 | `[web].format` | `jsonl` (the built-in) or `text`; `--format` wins |
-| `[web.brave].api_key_env` | variable holding the Brave subscription token; default `BRAVE_API_KEY` |
-| `[web.tavily].api_key_env` | variable holding the Tavily key; default `TAVILY_API_KEY` |
+| `[web.<provider>].api_key_env` | variable holding that provider's key. Defaults are below |
+| `[web.<provider>].base_url` | request URL when `--base-url` is absent. Not `[clank].base_url` |
 
 `api_key_env` names the variable that holds the key. The sample and this page do
-not put a key in the file. The default provider is Brave even when only
-`TAVILY_API_KEY` is set: pass `--provider tavily`, or set
-`[web].default_provider`, to search with Tavily.
+not put a key in the file. The default provider is Brave even when another key
+is set: pass `--provider`, or set `[web].default_provider`, to use a different
+one.
+
+`--base-url` and `[web.<provider>].base_url` are the request URL, not an origin
+and not the chat endpoint. `--base-url` wins. SearXNG has no built-in URL:
+without one of those two, the exit code is 2. Firecrawl, Exa, and Perplexity use
+their cloud URL when neither is set, and that cloud URL requires a key. A URL
+you set is a local instance, and the key is then optional. When a key is set it
+is still sent. Brave and Tavily require a key either way.
 
 There is no built-in chat model and no built-in chat URL. `clank` asks for
 `--model` / `CLANK_MODEL` / `[clank].model` and `--base-url` / `CLANK_BASE_URL`
@@ -107,18 +130,27 @@ prints the four filesystem observers without an endpoint.
 
 ## Providers
 
-| provider | request | auth |
-|---|---|---|
-| `brave` | `GET https://api.search.brave.com/res/v1/web/search?q=…&count=N` | header `X-Subscription-Token` |
-| `tavily` | `POST https://api.tavily.com/search` with `query`, `max_results`, and `search_depth` set to `basic` | header `Authorization: Bearer` |
+| provider | request | auth | key |
+|---|---|---|---|
+| `brave` | `GET https://api.search.brave.com/res/v1/web/search?q=…&count=N` | header `X-Subscription-Token` | `BRAVE_API_KEY`, required |
+| `tavily` | `POST https://api.tavily.com/search` with `query`, `max_results`, and `search_depth` set to `basic` | header `Authorization: Bearer`. The key is not in the body | `TAVILY_API_KEY`, required |
+| `firecrawl` | `POST https://api.firecrawl.dev/v1/search` with `query` and `limit` | header `Authorization: Bearer` when a key is set | `FIRECRAWL_API_KEY`, required on the cloud URL |
+| `searxng` | `GET <request-url>?q=…&format=json` | header `Authorization: Bearer` when a key is set. The key is not in the query | `SEARXNG_API_KEY`, optional. No built-in URL |
+| `exa` | `POST https://api.exa.ai/search` with `query`, `numResults`, and `contents.highlights` | header `x-api-key`. The key is not in the body | `EXA_API_KEY`, required on the cloud URL |
+| `perplexity` | `POST https://api.perplexity.ai/search` with `query` and `max_results` | header `Authorization: Bearer` | `PERPLEXITY_API_KEY`, required on the cloud URL |
 
-`--base-url` replaces that endpoint, for a proxy or a stub. It does not read
-`[clank].base_url`. Tavily's depth is pinned to `basic` so one invocation is one
-basic search.
+One invocation is one search. Tavily's depth stays `basic`. Firecrawl is not
+asked to scrape the hits. Exa is not asked for a deep or streamed search.
+Perplexity is the Search API, not a chat completion. A local Firecrawl is its
+`/v1/search` URL. A local SearXNG is its `/search` URL, and the instance has to
+have JSON format enabled or the body is not JSON (exit 1).
 
-Brave reads `web.results[]` (`title`, `url`, `description`). Tavily reads
-`results[]` (`title`, `url`, `content`). A result with no `url` is skipped and
-counted on stderr. If every result lacks a url, the exit code is 1.
+Brave reads `web.results[]` (`title`, `url`, `description`). Tavily and SearXNG
+read `results[]` (`title`, `url`, `content`). Firecrawl reads a flat `data[]` or
+`data.web[]` (`title`, `url`, `description`). Exa reads `results[]` and takes
+the snippet from the first `highlights` string, otherwise `text`. Perplexity
+reads `results[]` (`title`, `url`, `snippet`). A result with no `url` is skipped
+and counted on stderr. If every result lacks a url, the exit code is 1.
 
 ## Fetch
 

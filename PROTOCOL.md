@@ -297,9 +297,13 @@ Exit codes are `0` / `1` / `2`, the same classes as clank, and not `clank-jev`'s
 
 An empty result set is a completed search: the stage's job was to return what
 the provider returned. stdout is JSONL (`title`, `url`, `snippet`), or
-`--format text` lines of those three fields separated by tabs. The key is the
-environment variable named by `[web.brave]` or `[web.tavily]`. It is never an
-argument and never printed. The shape is in
+`--format text` lines of those three fields separated by tabs. Providers are
+`brave` (the default), `tavily`, `firecrawl`, `searxng`, `exa`, and `perplexity`.
+Brave and Tavily always need a key. Firecrawl, Exa, and Perplexity need a key on
+their cloud URL; `--base-url` or `[web.<provider>].base_url` is a local request
+URL and the key is then optional. SearXNG has no built-in URL (exit 2 without
+one of those) and its key is optional. A key that is set is a header on that
+request. It is never an argument and never printed. The shape is in
 [docs/clank-web.md](docs/clank-web.md).
 
 ## Admission rules

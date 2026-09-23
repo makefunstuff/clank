@@ -3,6 +3,8 @@
 # A missing file leaves flags and the environment in charge.
 # Precedence: flags, then environment, then this file, then built-ins.
 # The key stays in the environment. api_key_env names the variable.
+# base_url is that provider's request URL, not [clank].base_url.
+# SearXNG has no built-in URL. A base_url makes a local key optional.
 
 [clank]
 base_url = "http://127.0.0.1:8080/v1"
@@ -22,3 +24,17 @@ api_key_env = "BRAVE_API_KEY"
 
 [web.tavily]
 api_key_env = "TAVILY_API_KEY"
+
+[web.firecrawl]
+api_key_env = "FIRECRAWL_API_KEY"
+
+[web.searxng]
+api_key_env = "SEARXNG_API_KEY"
+# Replace with your instance's JSON search URL.
+base_url = "http://127.0.0.1:8888/search"
+
+[web.exa]
+api_key_env = "EXA_API_KEY"
+
+[web.perplexity]
+api_key_env = "PERPLEXITY_API_KEY"
