@@ -354,9 +354,8 @@ frames one answer per item and shares the prompt prefix, that a failed item is
 reported without hiding the others, and that the exit codes match the table
 above. `tests/web.rs` drives `clank-web` against a stub and checks the request,
 the JSONL, and exits `0`, `1` and `2`. `tests/docs.rs` guards this document
-against drift: every `clank` flag must appear in `README.md` and `CHEATSHEET.md`,
-every `clank-jev` flag in `README.md` and `docs/clank-jev.md`, every `clank-web`
-flag in `README.md` and `docs/clank-web.md`, every event type listed in
-`src/context.rs` must have a row in the event table, and every file this repo's
-docs link to must exist. Live model behaviour is recorded under
-[docs/history/](docs/history/README.md).
+against drift: every `clank` flag must appear in `docs/clank.md`, every
+`clank-jev` flag in `docs/clank-jev.md`, every `clank-web` flag in
+`docs/clank-web.md`, every event type listed in `src/context.rs` must have a row
+in the event table, and every file this repo's docs link to must exist. Live
+model behaviour is recorded under [docs/history/](docs/history/README.md).
