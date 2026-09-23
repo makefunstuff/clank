@@ -70,7 +70,6 @@ adds it; until then, compose with `cat`/`rg` yourself.
 
 ```sh
 curl -sL 'https://example.com/page' | clank --thinking off -m 'summarize; cite quotes'
-# planned sibling: clank-web "query" | clank -m "…"   # providers via .clank/config.toml
 ```
 
 ## One-liners
