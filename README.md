@@ -40,6 +40,13 @@ clank -m 'reply with exactly: pong'    # -> pong, exit 0
 
 Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`) yourself.
 
+## Web search
+
+`clank` tools are local filesystem observation only — no web fetch. For the net,
+compose in the shell (`curl … | clank -m "…"`). A sibling `clank-web` stage
+(search providers + `.clank/config.toml`) is the planned pipe for
+provider-backed search; it will not fold network into `clank`'s tool loop.
+
 ## Harness cost (dated)
 
 **2026-09-22** one-shot on the same Go model (`opencode-go/glm-5.3-flash`),
