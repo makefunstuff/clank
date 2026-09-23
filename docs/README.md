@@ -3,12 +3,14 @@
 | file | what it is |
 |---|---|
 | [use-cases.md](use-cases.md) | jobs built out of the stage: the command, the gate that says it worked, the price |
-| [clank-jev.md](clank-jev.md) | the sibling binary: providers, reason sets, gates, exit codes, six composed examples |
-| [clank-web.md](clank-web.md) | the sibling binary: one web search or one fetched URL, providers, config, exit codes |
+| [clank-jev.md](clank-jev.md) | decision stage: flag table, providers, gates, exit codes, six composed examples |
+| [clank-web.md](clank-web.md) | search stage: flag table, providers, config, exit codes, one fetch |
 | [macbook-omlx-local-inference.md](macbook-omlx-local-inference.md) | research notes (local Mac / oMLX): model picks and probes — not required for first run |
 | [images/clank-demo.gif](images/clank-demo.gif) | the README's demo, a real session recorded by `scripts/record-demo.sh` (VHS tape `scripts/demo.tape`) |
 | [history/](history/README.md) | closed research and review records, kept because later documents cite them |
 
-The contract is [../PROTOCOL.md](../PROTOCOL.md); flags and one-liners are in
-[../CHEATSHEET.md](../CHEATSHEET.md); the repository's enforceable conventions
-are the rules in [../.jev/rules](../.jev/rules).
+The contract is [../PROTOCOL.md](../PROTOCOL.md). Compose paths and the `clank`
+flag table are in [../CHEATSHEET.md](../CHEATSHEET.md). Flag tables for
+`clank-jev` and `clank-web` are in [clank-jev.md](clank-jev.md) and
+[clank-web.md](clank-web.md). The repository's enforceable conventions are the
+rules in [../.jev/rules](../.jev/rules).

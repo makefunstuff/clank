@@ -105,6 +105,30 @@ stdout is the bare value for one question (`code`, `true`, `2`), a JSON object
 for several; diagnostics and every gate failure go to stderr; `-q` silences
 them.
 
+## Flags
+
+Credentials come from the environment only. Which variable selects which
+provider is in the table under [Providers](#providers).
+
+| flag | meaning |
+|---|---|
+| `--ask TEXT` | one question; needs exactly one of the three shapes below |
+| `--choice A,B,C` | unordered options, printed by name |
+| `--boolean` | yes/no, printed as `true` or `false` |
+| `--score low,mid,high` | ordered levels, lowest first; prints the level number |
+| `--checks FILE` | a JSON file of questions: `{id: {type, instructions, criteria, reasons?}}` |
+| `--min-prob P` | exit 1 unless the decision is at least this confident; for a yes/no question a decisive *no* has p≈0 and confidence≈1, so the gate is on the decision, not on "yes" |
+| `--expect VALUE` | exit 1 unless the decision equals this (one question) |
+| `--expect-min N` | exit 1 unless an ordered decision is at least this level |
+| `--print-reason` | print the closed-choice reason instead of the value |
+| `--provider NAME` | `auto`, `typesafe`, `openrouter`, `kev` |
+| `--model ID` | provider default, or `[clank].model` when the flag is absent |
+| `--base-url URL` | provider endpoint, or `[clank].base_url` when the flag is absent |
+| `--config PATH` | config file; otherwise `CLANK_CONFIG`, otherwise `./.clank/config.toml` |
+| `--timeout SECS` | per-request timeout; otherwise `[clank].timeout`, otherwise 60 |
+| `--json` | the full result object instead of the bare value |
+| `-q` / `--quiet` | no diagnostic line on stderr |
+
 ## Combinations
 
 `clank` and `clank-jev` are both stages, so they compose in both orders. Each of

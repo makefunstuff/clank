@@ -15,20 +15,31 @@ Recorded against a live server by `scripts/record-demo.sh`.
 
 ## Install
 
-Package `clank-cli-app` → binaries `clank`, `clank-jev` and `clank-web` (package
-≠ binary). Never `cargo install clank` — that crates.io name is unrelated.
+Package `clank-cli-app`. Binaries in this tree: `clank`, `clank-jev`,
+`clank-web`. `cargo install clank` installs a different crates.io crate.
+
+crates.io `clank-cli-app` 0.1.0, published 2026-09-22 from `fb6067d`, lists
+`clank` and `clank-jev` in that crate's `Cargo.toml`. `clank-web` is in this git
+tree and is absent from that crate. No `v*` tag contains `clank-web`. The
+crates.io cut that includes `clank-web` is not published.
 
 ```sh
-cargo install clank-cli-app --locked   # -> ~/.cargo/bin/clank, clank-jev, clank-web
+cargo install clank-cli-app --locked --version 0.1.0
+cargo install --locked --git https://github.com/makefunstuff/clank
 ```
 
-Git fallback:
+`--version 0.1.0` installs the crates.io cut (`clank`, `clank-jev`). The git
+line follows the default branch (`main`) and installs `clank`, `clank-jev`, and
+`clank-web`.
 
 ```sh
 cargo install --locked --git https://github.com/makefunstuff/clank --tag v0.1.0
 ```
 
-Prebuilt archives: [releases](https://github.com/makefunstuff/clank/releases).
+That tag installs `clank` and `clank-jev`. The package name in that tag's
+`Cargo.toml` is `clank`. `--git` selects this repository. Release archives for
+`v0.1.0` are the same two binaries:
+[releases](https://github.com/makefunstuff/clank/releases).
 
 ## 30s smoke
 
@@ -65,7 +76,7 @@ Token knobs (`--thinking off`, lower `--max-tokens`, `--no-tools` when piped):
 
 | | |
 |---|---|
-| [CHEATSHEET.md](CHEATSHEET.md) | flags, one-liners, herdr compose |
+| [CHEATSHEET.md](CHEATSHEET.md) | contract, one compose path per stage, `clank` flags |
 | [PROTOCOL.md](PROTOCOL.md) | invariants, exit codes, events |
 | [docs/use-cases.md](docs/use-cases.md) | job families, gates, prices |
 | [docs/clank-jev.md](docs/clank-jev.md) | typed routing decisions |
@@ -78,8 +89,10 @@ JSONL event kinds (`--jsonl`): `run`, `item`, `tool_call`, `tool_result`,
 
 ## Flags (index)
 
-Meanings live in [CHEATSHEET.md](CHEATSHEET.md). Listed so the surface stays
-short without drifting from `--help`.
+Names only, so this page stays aligned with `--help`. Meanings: `clank` in
+[CHEATSHEET.md](CHEATSHEET.md), `clank-jev` in
+[docs/clank-jev.md](docs/clank-jev.md), `clank-web` in
+[docs/clank-web.md](docs/clank-web.md).
 
 `clank`: `--api-key`, `--base-url`, `--config`, `--context`, `--each`,
 `--json-schema`, `--jsonl`, `--list-tools`, `--max-rounds`, `--max-tokens`,

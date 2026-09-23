@@ -91,10 +91,10 @@ fn every_flag_is_documented_in_the_reference_docs() {
 #[test]
 fn every_clank_jev_flag_is_documented_in_the_reference_docs() {
     let readme = read("README.md");
-    let cheatsheet = read("CHEATSHEET.md");
+    let jev = read("docs/clank-jev.md");
     let mut missing: Vec<String> = Vec::new();
     for flag in jev_flags() {
-        for (name, doc) in [("README.md", &readme), ("CHEATSHEET.md", &cheatsheet)] {
+        for (name, doc) in [("README.md", &readme), ("docs/clank-jev.md", &jev)] {
             if !doc.contains(&flag) {
                 missing.push(format!("{flag} in {name}"));
             }
@@ -109,12 +109,12 @@ fn every_clank_jev_flag_is_documented_in_the_reference_docs() {
 #[test]
 fn every_clank_web_flag_is_documented_in_the_reference_docs() {
     let readme = read("README.md");
-    let cheatsheet = read("CHEATSHEET.md");
+    let web = read("docs/clank-web.md");
     let flags = parse_long_flags(env!("CARGO_BIN_EXE_clank-web"));
     assert!(flags.len() > 5, "parsed too few flags: {flags:?}");
     let mut missing: Vec<String> = Vec::new();
     for flag in flags {
-        for (name, doc) in [("README.md", &readme), ("CHEATSHEET.md", &cheatsheet)] {
+        for (name, doc) in [("README.md", &readme), ("docs/clank-web.md", &web)] {
             if !doc.contains(&flag) {
                 missing.push(format!("{flag} in {name}"));
             }

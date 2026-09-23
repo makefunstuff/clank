@@ -66,9 +66,10 @@ says where the project is, what is open, and how to check any of it.
   stage), `tests/jev_ci_stub.rs` (1), `tests/web.rs` (10, the search stage),
   `tests/config.rs` (9, the shared file), `tests/docs.rs` (8, docs vs code),
   `tests/rules.rs` (3, the rules themselves), plus 56 unit tests in `src/`.
-- Package name on crates.io is `clank-cli-app`; the installed binaries remain
-  `clank`, `clank-jev` and `clank-web`. Install:
-  `cargo install clank-cli-app --locked`.
+- Package name on crates.io is `clank-cli-app`. The 0.1.0 publish (2026-09-22,
+  `fb6067d`) installs `clank` and `clank-jev`. This tree also builds `clank-web`.
+  That binary is absent from the 0.1.0 crate. See [README.md](README.md)
+  Install.
 - CI on every push and pull request: warnings are errors, `cargo test`
   (including `tests/jev_ci_stub.rs`, which drives `clank-jev` against a local
   stub — no secret and no provider), the docs wrapping check, and

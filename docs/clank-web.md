@@ -120,6 +120,19 @@ Brave reads `web.results[]` (`title`, `url`, `description`). Tavily reads
 `results[]` (`title`, `url`, `content`). A result with no `url` is skipped and
 counted on stderr. If every result lacks a url, the exit code is 1.
 
+## Flags
+
+| flag | meaning |
+|---|---|
+| `--provider NAME` | `brave` (default) or `tavily`; `[web].default_provider` overrides the built-in when the flag is absent |
+| `--limit N` | 1..=20, default 5; overrides `[web].limit` |
+| `--format jsonl\|text` | JSONL, or `title<TAB>url<TAB>snippet`; default `jsonl` |
+| `--base-url URL` | replace the provider endpoint (a proxy, a stub). Ignores `[clank].base_url` |
+| `--config PATH` | config file; otherwise `CLANK_CONFIG`, otherwise `./.clank/config.toml` |
+| `--fetch URL` | GET one `http` or `https` URL; no search and no key. Body cap 524288 bytes |
+| `--timeout SECS` | per-request timeout, default 30 |
+| `-q` / `--quiet` | no result-count line on stderr |
+
 ## Fetch
 
 `--fetch URL` is one GET of an `http` or `https` URL. Redirects are followed.
