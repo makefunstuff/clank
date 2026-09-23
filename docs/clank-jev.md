@@ -30,13 +30,15 @@ Credentials come from the environment, never from argv:
 | `openrouter` | `openrouter.ai/api/alpha/decisions` | `OPENROUTER_API_KEY` | `typesafe/jev-1.13` |
 | `kev` | `127.0.0.1:8009/v1/systemone` (`--base-url` to move it) | none | `kev-latest` |
 
-`.clank/config.toml` is optional. `[clank].base_url` and `[clank].model` apply
-when `--base-url` and `--model` were not passed, and they replace the provider
-built-ins above. `--timeout` wins over `[clank].timeout`, which wins over 60
-seconds. Provider credentials stay the variables in the table;
-`[clank].api_key_env` is the fallback when those are unset. `[web]` is search
-configuration for `clank-web`. A missing file leaves the flags and the provider
-environment in charge. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
+`./.clank/config.toml` is optional, and it is read from the working directory
+only. `--config PATH` or `CLANK_CONFIG` names a different file.
+`[clank].base_url` and `[clank].model` apply when `--base-url` and `--model`
+were not passed, and they replace the provider built-ins above. `--timeout` wins
+over `[clank].timeout`, which wins over 60 seconds. Provider credentials stay
+the variables in the table; `[clank].api_key_env` names the fallback variable
+when those are unset. `[web]` is search configuration for `clank-web`. A missing
+file in the working directory leaves the flags and the provider environment in
+charge. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
 
 `kev` is a local System One server; [kev](https://github.com/jaredpalmer/kev) is
 a trained Jev-family model (LoRA + pointer readout head on Qwen, one prefill

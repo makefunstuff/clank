@@ -125,6 +125,7 @@ fn run(dir: &Path, args: &[&str], env: &[(&str, &str)], stdin: Option<&str>) -> 
         .env_remove("BRAVE_API_KEY")
         .env_remove("TAVILY_API_KEY")
         .env_remove("CLANK_WEB_TEST_KEY")
+        .env_remove("CLANK_CONFIG")
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
     for (k, v) in env {

@@ -81,17 +81,17 @@ JSONL event kinds (`--jsonl`): `run`, `item`, `tool_call`, `tool_result`,
 Meanings live in [CHEATSHEET.md](CHEATSHEET.md). Listed so the surface stays
 short without drifting from `--help`.
 
-`clank`: `--api-key`, `--base-url`, `--context`, `--each`, `--json-schema`,
-`--jsonl`, `--list-tools`, `--max-rounds`, `--max-tokens`, `--message`,
-`--model`, `--no-tools`, `--null`, `--quiet`, `--show-thinking`, `--system`,
-`--thinking`, `--timeout`, `--tools`
+`clank`: `--api-key`, `--base-url`, `--config`, `--context`, `--each`,
+`--json-schema`, `--jsonl`, `--list-tools`, `--max-rounds`, `--max-tokens`,
+`--message`, `--model`, `--no-tools`, `--null`, `--quiet`, `--show-thinking`,
+`--system`, `--thinking`, `--timeout`, `--tools`
 
 `clank-jev`: `--ask`, `--base-url`, `--boolean`, `--checks`, `--choice`,
-`--expect`, `--expect-min`, `--json`, `--min-prob`, `--model`, `--print-reason`,
-`--provider`, `--quiet`, `--score`, `--timeout`
+`--config`, `--expect`, `--expect-min`, `--json`, `--min-prob`, `--model`,
+`--print-reason`, `--provider`, `--quiet`, `--score`, `--timeout`
 
-`clank-web`: `--base-url`, `--fetch`, `--format`, `--limit`, `--provider`,
-`--quiet`, `--timeout`
+`clank-web`: `--base-url`, `--config`, `--fetch`, `--format`, `--limit`,
+`--provider`, `--quiet`, `--timeout`
 
 ## License
 

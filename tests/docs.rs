@@ -134,6 +134,8 @@ fn the_web_stage_contract_is_written_down_and_true() {
         protocol.contains(".clank/config.toml"),
         "PROTOCOL.md must say which file holds the web config"
     );
+    assert!(protocol.contains("CLANK_CONFIG"), "PROTOCOL.md must name the config-path override");
+    assert!(protocol.contains("working directory"), "PROTOCOL.md must say discovery is the working directory");
     for code in ["0", "1", "2"] {
         assert!(
             protocol.contains(&format!("| `{code}` |")),
@@ -150,6 +152,7 @@ fn the_web_stage_contract_is_written_down_and_true() {
         .args(["--provider", "google", "q"])
         .env_remove("BRAVE_API_KEY")
         .env_remove("TAVILY_API_KEY")
+        .env_remove("CLANK_CONFIG")
         .output()
         .unwrap();
     assert_eq!(usage.status.code(), Some(2), "an unknown provider is usage (2)");
@@ -160,6 +163,7 @@ fn the_web_stage_contract_is_written_down_and_true() {
         .args(["--provider", "brave", "q"])
         .env_remove("BRAVE_API_KEY")
         .env_remove("TAVILY_API_KEY")
+        .env_remove("CLANK_CONFIG")
         .output()
         .unwrap();
     assert_eq!(missing.status.code(), Some(1), "a missing key is 1");
@@ -192,7 +196,8 @@ fn the_decision_stage_contract_is_written_down_and_true() {
         cmd.env_remove("TYPESAFE_API_KEY")
             .env_remove("JEV_API_KEY")
             .env_remove("JEV_CLI_API_KEY")
-            .env_remove("OPENROUTER_API_KEY");
+            .env_remove("OPENROUTER_API_KEY")
+            .env_remove("CLANK_CONFIG");
     };
     let mut cmd = Command::new(bin);
     cmd.args(["--ask", "which?", "--choice", "a,b", "--provider", "typesafe"])

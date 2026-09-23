@@ -39,9 +39,11 @@ with `-q`. `-q` suppresses the result-count line.
 
 ## Config
 
-`.clank/config.toml` is optional. The binaries walk up from the working
-directory and read the closest file. A missing file leaves flags and the
-environment in charge.
+`.clank/config.toml` is optional. Each binary reads `./.clank/config.toml` in
+the working directory when that file exists, and does not look in parent
+directories. `--config PATH` names a file. `CLANK_CONFIG` names one when the
+flag is absent. A path given that way has to exist. A missing
+`./.clank/config.toml` leaves flags and the environment in charge.
 
 Precedence is flags, then the environment, then the file, then built-ins.
 `clank` and `clank-jev` read `[clank]` (model, endpoint, timeout, token cap).
@@ -49,14 +51,15 @@ Precedence is flags, then the environment, then the file, then built-ins.
 not a search endpoint. `[web]` is not required: a file that only names a Brave
 key does not change `clank` or `clank-jev`.
 
-The sample is [`fixtures/clank.config.toml`](../fixtures/clank.config.toml):
+The sample is [`fixtures/clank.config.toml`](../fixtures/clank.config.toml). It
+names environment variables. It does not contain a key.
 
 ```toml
-# Optional. clank and clank-jev read [clank]. clank-web reads [web].
+# Optional. Read from ./.clank/config.toml in the working directory.
+# --config PATH or CLANK_CONFIG names a different file. Parents are not searched.
 # A missing file leaves flags and the environment in charge.
 # Precedence: flags, then environment, then this file, then built-ins.
 # The key stays in the environment. api_key_env names the variable.
-# An inline api_key is used only when that variable is unset.
 
 [clank]
 base_url = "http://127.0.0.1:8080/v1"
@@ -92,10 +95,10 @@ that table.
 | `[web.brave].api_key_env` | variable holding the Brave subscription token; default `BRAVE_API_KEY` |
 | `[web.tavily].api_key_env` | variable holding the Tavily key; default `TAVILY_API_KEY` |
 
-`api_key_env` names the variable. An inline `api_key` is used only when that
-variable is unset. The default provider is Brave even when only `TAVILY_API_KEY`
-is set: pass `--provider tavily`, or set `[web].default_provider`, to search
-with Tavily.
+`api_key_env` names the variable that holds the key. The sample and this page do
+not put a key in the file. The default provider is Brave even when only
+`TAVILY_API_KEY` is set: pass `--provider tavily`, or set
+`[web].default_provider`, to search with Tavily.
 
 There is no built-in chat model and no built-in chat URL. `clank` asks for
 `--model` / `CLANK_MODEL` / `[clank].model` and `--base-url` / `CLANK_BASE_URL`

@@ -1,6 +1,11 @@
-//! Optional `.clank/config.toml`, found by walking up from the working directory.
+//! Optional `.clank/config.toml` in the working directory.
 //!
-//! A missing file is not an error: flags and the environment stay in charge.
+//! Discovery is that directory and nowhere else: a file in a parent is a
+//! monorepo landmine, so it is not read. `--config PATH` names a file, and
+//! `CLANK_CONFIG` names one when the flag is absent. Either of those is an
+//! explicit path: missing or unreadable is a usage error. A missing
+//! `./.clank/config.toml` is not an error.
+//!
 //! A file that exists and does not parse is a usage error for whichever binary
 //! opened it.
 //!
@@ -58,25 +63,25 @@ struct Raw {
     web: Web,
 }
 
-/// Walk from `start` toward the root. The closest `.clank/config.toml` wins.
-pub fn discover(start: &Path) -> Option<PathBuf> {
-    let mut dir = start.to_path_buf();
-    loop {
-        let candidate = dir.join(DIR_NAME).join(FILE_NAME);
-        if candidate.is_file() {
-            return Some(candidate);
-        }
-        if !dir.pop() {
-            return None;
-        }
-    }
+/// `./.clank/config.toml` inside `dir`, when that file exists. Parents are not searched.
+pub fn implied_file(dir: &Path) -> Option<PathBuf> {
+    let candidate = dir.join(DIR_NAME).join(FILE_NAME);
+    candidate.is_file().then_some(candidate)
 }
 
-pub fn load() -> Result<Option<File>, String> {
+/// `flag` is `--config`. It wins over `CLANK_CONFIG`, which wins over the file
+/// in the working directory.
+pub fn load(flag: Option<&Path>) -> Result<Option<File>, String> {
+    if let Some(path) = flag.filter(|p| !p.as_os_str().is_empty()) {
+        return read_at(path).map(Some);
+    }
+    if let Some(path) = env_var("CLANK_CONFIG") {
+        return read_at(Path::new(&path)).map(Some);
+    }
     let start = std::env::current_dir().map_err(|e| format!("current directory: {e}"))?;
-    match discover(&start) {
-        None => Ok(None),
+    match implied_file(&start) {
         Some(path) => read_at(&path).map(Some),
+        None => Ok(None),
     }
 }
 
@@ -268,19 +273,19 @@ mod tests {
     }
 
     #[test]
-    fn the_closer_config_wins_the_walk() {
+    fn the_implied_file_is_the_working_directory_only() {
         let root = std::env::temp_dir().join(format!("clank-cfg-discover-{}", std::process::id()));
         let parent = root.join("parent");
         let child = parent.join("child");
         let _ = std::fs::remove_dir_all(&root);
-        std::fs::create_dir_all(child.join(".clank")).unwrap();
         std::fs::create_dir_all(parent.join(".clank")).unwrap();
+        std::fs::create_dir_all(&child).unwrap();
         let parent_file = parent.join(".clank/config.toml");
-        let child_file = child.join(".clank/config.toml");
         std::fs::write(&parent_file, "[clank]\nmodel = \"parent\"\n").unwrap();
-        assert_eq!(discover(&child), Some(parent_file.clone()));
-        std::fs::write(&child_file, "[clank]\nmodel = \"child\"\n").unwrap();
-        assert_eq!(discover(&child), Some(child_file));
+        assert_eq!(implied_file(&child), None, "a parent file is not the working directory");
+        assert_eq!(implied_file(&parent), Some(parent_file));
+        let sample = include_str!("../fixtures/clank.config.toml");
+        assert!(!sample.contains("api_key ="), "the sample names a variable, it does not carry a key");
         let _ = std::fs::remove_dir_all(&root);
     }
 }

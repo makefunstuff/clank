@@ -11,10 +11,12 @@ context is exactly what was piped.
 - [docs/macbook-omlx-local-inference.md](docs/macbook-omlx-local-inference.md) —
   local models on a 16 GB Mac
 
-Set `CLANK_BASE_URL` and `CLANK_MODEL`, or `[clank]` in `.clank/config.toml`.
-Precedence is flags, then the environment, then the file, then built-ins. There
-is no built-in model or base URL. Web search keys live under `[web]` and are
-read by `clank-web`.
+Set `CLANK_BASE_URL` and `CLANK_MODEL`, or `[clank]` in `./.clank/config.toml`.
+That file is the working directory only. `--config PATH` or `CLANK_CONFIG` names
+a different file. Precedence is flags, then the environment, then the file, then
+built-ins. There is no built-in model or base URL. Web search keys live under
+`[web]` and are read by `clank-web`. The key stays in the environment;
+`api_key_env` names the variable.
 
 
 ## Install
@@ -147,6 +149,7 @@ Credentials come from the environment only.
 | `--provider NAME` | `auto`, `typesafe`, `openrouter`, `kev` |
 | `--model ID` | provider default, or `[clank].model` when the flag is absent |
 | `--base-url URL` | provider endpoint, or `[clank].base_url` when the flag is absent |
+| `--config PATH` | config file; otherwise `CLANK_CONFIG`, otherwise `./.clank/config.toml` |
 | `--timeout SECS` | per-request timeout; otherwise `[clank].timeout`, otherwise 60 |
 | `--json` | the full result object instead of the bare value |
 | `-q` / `--quiet` | no diagnostic line on stderr |
@@ -169,15 +172,15 @@ diagnostics. The schema and the sample file are in
 | `--limit N` | 1..=20, default 5; overrides `[web].limit` |
 | `--format jsonl\|text` | JSONL, or `title<TAB>url<TAB>snippet`; default `jsonl` |
 | `--base-url URL` | replace the provider endpoint (a proxy, a stub). Ignores `[clank].base_url` |
+| `--config PATH` | config file; otherwise `CLANK_CONFIG`, otherwise `./.clank/config.toml` |
 | `--fetch URL` | GET one `http` or `https` URL; no search and no key. Body cap 524288 bytes |
 | `--timeout SECS` | per-request timeout, default 30 |
 | `-q` / `--quiet` | no result-count line on stderr |
 
 `BRAVE_API_KEY` is the Brave subscription token (`X-Subscription-Token`).
 `TAVILY_API_KEY` is sent as `Authorization: Bearer`. `[web.brave].api_key_env`
-and `[web.tavily].api_key_env` name a different variable. An inline `api_key` is
-used only when that variable is unset. The default provider stays Brave when
-only `TAVILY_API_KEY` is set.
+and `[web.tavily].api_key_env` name a different variable. The key stays in the
+environment. The default provider stays Brave when only `TAVILY_API_KEY` is set.
 
 ```toml
 [web]
@@ -209,7 +212,8 @@ api_key_env = "TAVILY_API_KEY"
 | `--list-tools` | | print the tool definitions as JSON, no model call |
 | `--jsonl` / `-j` | | JSONL events on stdout instead of text |
 | `-q` / `--quiet` | | suppress stderr breadcrumbs |
-| `--model` / `--base-url` / `--api-key` | `CLANK_MODEL` / `CLANK_BASE_URL` / `CLANK_API_KEY` | endpoint; otherwise `[clank]` in `.clank/config.toml`. No built-in model or base URL |
+| `--config PATH` | `CLANK_CONFIG` | config file; otherwise `./.clank/config.toml` in the working directory |
+| `--model` / `--base-url` / `--api-key` | `CLANK_MODEL` / `CLANK_BASE_URL` / `CLANK_API_KEY` | endpoint; otherwise `[clank]` in that file. No built-in model or base URL |
 | `--timeout N` | `CLANK_TIMEOUT` | per-request timeout, seconds; otherwise `[clank].timeout` (default 600) |
 | `--max-tokens N` | | completion cap; otherwise `[clank].max_tokens` (default 8192) |
 | `--max-rounds N` | | tool-call rounds with `--tools`; otherwise `[clank].max_rounds` (default 12) |

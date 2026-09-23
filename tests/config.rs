@@ -139,6 +139,7 @@ fn clear(cmd: &mut Command) {
         "JEV_API_KEY",
         "JEV_CLI_API_KEY",
         "OPENROUTER_API_KEY",
+        "CLANK_CONFIG",
     ] {
         cmd.env_remove(key);
     }
@@ -277,7 +278,7 @@ fn flags_override_the_file_and_the_environment() {
 }
 
 #[test]
-fn the_environment_overrides_the_file_and_a_closer_file_wins_the_walk() {
+fn a_config_in_a_parent_directory_is_not_read() {
     let stub = Stub::start("/v1");
     let root = Tmp::new();
     let parent = root.path().join("parent");
@@ -290,13 +291,11 @@ fn the_environment_overrides_the_file_and_a_closer_file_wins_the_walk() {
     )
     .unwrap();
 
-    let from_env = spawn(CLANK, &child, &["--no-tools", "-m", "hi"], &[("CLANK_MODEL", "from-env")], None);
-    assert_eq!(from_env.code, 0, "{}", from_env.stderr);
-    assert_eq!(body_of(&stub.only())["model"], "from-env");
-
-    let from_parent = spawn(CLANK, &child, &["--no-tools", "-m", "hi"], &[], None);
-    assert_eq!(from_parent.code, 0, "{}", from_parent.stderr);
-    assert_eq!(body_of(&stub.only())["model"], "from-parent");
+    let ignored = spawn(CLANK, &child, &["--no-tools", "-m", "hi"], &[], None);
+    assert_eq!(ignored.code, 2, "{}", ignored.stderr);
+    assert!(ignored.stdout.is_empty(), "{}", ignored.stdout);
+    assert!(!ignored.stderr.contains("from-parent"), "{}", ignored.stderr);
+    stub.none();
 
     std::fs::create_dir_all(child.join(".clank")).unwrap();
     std::fs::write(
@@ -307,6 +306,50 @@ fn the_environment_overrides_the_file_and_a_closer_file_wins_the_walk() {
     let from_child = spawn(CLANK, &child, &["--no-tools", "-m", "hi"], &[], None);
     assert_eq!(from_child.code, 0, "{}", from_child.stderr);
     assert_eq!(body_of(&stub.only())["model"], "from-child");
+}
+
+#[test]
+fn an_explicit_config_path_overrides_the_working_directory() {
+    let stub = Stub::start("/v1");
+    let dir = Tmp::new();
+    std::fs::create_dir(dir.path().join(".clank")).unwrap();
+    std::fs::write(
+        dir.path().join(".clank/config.toml"),
+        format!("[clank]\nbase_url = \"{}\"\nmodel = \"from-cwd\"\n", stub.url),
+    )
+    .unwrap();
+    let flagged = dir.path().join("flagged.toml");
+    let from_env = dir.path().join("from-env.toml");
+    std::fs::write(&flagged, format!("[clank]\nbase_url = \"{}\"\nmodel = \"from-flag\"\n", stub.url)).unwrap();
+    std::fs::write(&from_env, format!("[clank]\nbase_url = \"{}\"\nmodel = \"from-env-path\"\n", stub.url)).unwrap();
+    let flagged_s = flagged.to_str().unwrap();
+    let from_env_s = from_env.to_str().unwrap();
+
+    let by_flag = spawn(CLANK, dir.path(), &["--no-tools", "--config", flagged_s, "-m", "hi"], &[("CLANK_CONFIG", from_env_s)], None);
+    assert_eq!(by_flag.code, 0, "{}", by_flag.stderr);
+    assert_eq!(body_of(&stub.only())["model"], "from-flag");
+
+    let by_env = spawn(CLANK, dir.path(), &["--no-tools", "-m", "hi"], &[("CLANK_CONFIG", from_env_s)], None);
+    assert_eq!(by_env.code, 0, "{}", by_env.stderr);
+    assert_eq!(body_of(&stub.only())["model"], "from-env-path");
+
+    let missing = spawn(CLANK, dir.path(), &["--no-tools", "--config", "/no/such/clank.toml", "-m", "hi"], &[], None);
+    assert_eq!(missing.code, 2, "{}", missing.stderr);
+    assert!(missing.stdout.is_empty(), "{}", missing.stdout);
+    assert!(missing.stderr.contains("reading"), "{}", missing.stderr);
+
+    let missing_env = spawn(CLANK, dir.path(), &["--no-tools", "-m", "hi"], &[("CLANK_CONFIG", "/no/such/clank.toml")], None);
+    assert_eq!(missing_env.code, 2, "{}", missing_env.stderr);
+    assert!(missing_env.stderr.contains("reading"), "{}", missing_env.stderr);
+
+    let jev = spawn(
+        JEV,
+        dir.path(),
+        &["--config", "/no/such/clank.toml", "--provider", "typesafe", "--ask", "which?", "--choice", "a,b"],
+        &[],
+        Some("state"),
+    );
+    assert_eq!(jev.code, 2, "{}", jev.stderr);
 }
 
 fn json_once(payload: &'static [u8]) -> (String, Receiver<Req>) {

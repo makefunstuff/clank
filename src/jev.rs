@@ -20,10 +20,11 @@
 //!   `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) -> api.typesafe.ai
 //!   `OPENROUTER_API_KEY` -> openrouter.ai Decisions endpoint (the same Jev)
 //!
-//! Optional `.clank/config.toml` supplies `[clank].model` and `[clank].base_url`
-//! when `--model` and `--base-url` are absent. `[web]` is ignored. A missing
-//! file leaves the provider built-ins and the environment variables above in
-//! charge. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
+//! Optional `./.clank/config.toml` supplies `[clank].model` and `[clank].base_url`
+//! when `--model` and `--base-url` are absent. `--config` or `CLANK_CONFIG`
+//! names a different file. `[web]` is ignored. A missing file in the working
+//! directory leaves the provider built-ins and the environment variables above
+//! in charge. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
 //!
 //! Exit codes: 0 decided and passed every gate · 1 a gate failed (the decision is
 //! usable, you asked not to trust it) · 2 usage · 3 provider, network or credentials.
@@ -33,6 +34,7 @@ mod config;
 use clap::Parser;
 use serde_json::{json, Map, Value};
 use std::io::Read;
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const TYPESAFE_URL: &str = "https://api.typesafe.ai/v1/systemone";
@@ -107,6 +109,10 @@ struct Args {
     /// overrides the provider endpoint, for a local stub or a proxy
     #[arg(long, value_name = "URL")]
     base_url: Option<String>,
+
+    /// config file; otherwise CLANK_CONFIG, otherwise ./.clank/config.toml
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
 
     /// per-request timeout, seconds; otherwise [clank].timeout (default 60)
     #[arg(long, value_name = "SECS")]
@@ -656,7 +662,7 @@ fn bare_value(answers: &[Answer]) -> String {
 }
 
 fn run(args: Args) -> i32 {
-    let file = match config::load() {
+    let file = match config::load(args.config.as_deref()) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("clank-jev: {e}");

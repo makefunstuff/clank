@@ -271,7 +271,16 @@ same reasons the decision stage is not a flag:
 | R1 composition | the shell already composes a search with a summary | `clank-web "query" \| clank -m "summarize with citations"` is the whole feature |
 | invariant 3 | a tool round would read the network on an input the pipe cannot show | the query is the invocation, and the results are what the next stage reads |
 | invariant 4 | clank's network is the model endpoint | the search APIs live in the binary whose job is those APIs |
-| R4 no memory | a search key would become a clank tool setting | `.clank/config.toml` is optional and shared. `clank` and `clank-jev` read `[clank]`. `clank-web` reads `[web]`. A missing file leaves flags and the environment in charge |
+| R4 no memory | a search key would become a clank tool setting | `.clank/config.toml` is optional and shared. `clank` and `clank-jev` read `[clank]`. `clank-web` reads `[web]`. A missing file in the working directory leaves flags and the environment in charge |
+
+Discovery is the working directory. Each binary loads `./.clank/config.toml`
+when that file exists, and does not search parent directories. `--config PATH`
+names a file. `CLANK_CONFIG` names one when the flag is absent. An explicit path
+that is missing is usage (exit `2` on `clank`, `clank-jev`, and `clank-web`). A
+missing `./.clank/config.toml` is not an error. Value precedence stays flags,
+then the environment, then the file, then built-ins. The key is the environment
+variable named by `api_key_env`. The sample at `fixtures/clank.config.toml`
+names variables and does not carry a key.
 
 `clank --list-tools` stays the four read-only filesystem observers. One
 invocation is one request: no crawl, no JavaScript, no second fetch of a link
@@ -288,10 +297,10 @@ Exit codes are `0` / `1` / `2`, the same classes as clank, and not `clank-jev`'s
 
 An empty result set is a completed search: the stage's job was to return what
 the provider returned. stdout is JSONL (`title`, `url`, `snippet`), or
-`--format text` lines of those three fields separated by tabs. The key is an
-environment variable named by `[web.brave]` or `[web.tavily]`, and an inline
-`api_key` is used only when that variable is unset. It is never an argument and
-never printed. The shape is in [docs/clank-web.md](docs/clank-web.md).
+`--format text` lines of those three fields separated by tabs. The key is the
+environment variable named by `[web.brave]` or `[web.tavily]`. It is never an
+argument and never printed. The shape is in
+[docs/clank-web.md](docs/clank-web.md).
 
 ## Admission rules
 

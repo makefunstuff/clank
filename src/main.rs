@@ -20,10 +20,11 @@
 //! the pair): with `--tools`, the rounds run unconstrained and then exactly one
 //! final request carries the schema and no tools. See PROTOCOL.md.
 //!
-//! Optional `.clank/config.toml` (walked up from the working directory) supplies
-//! `[clank]` when flags and the environment do not. A missing file leaves
-//! `CLANK_MODEL` and `CLANK_BASE_URL` in charge. There is no built-in model or
-//! base URL. `[web]` in that file is for `clank-web`.
+//! Optional `./.clank/config.toml` supplies `[clank]` when flags and the
+//! environment do not. `--config` or `CLANK_CONFIG` names a different file.
+//! A missing file in the working directory leaves `CLANK_MODEL` and
+//! `CLANK_BASE_URL` in charge. There is no built-in model or base URL.
+//! `[web]` in that file is for `clank-web`.
 
 mod client;
 mod config;
@@ -103,6 +104,10 @@ struct Args {
     /// with --each: items are NUL-separated, like `find -print0`
     #[arg(short = '0', long = "null")]
     null_items: bool,
+
+    /// config file; otherwise CLANK_CONFIG, otherwise ./.clank/config.toml
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
 
     /// model name; otherwise CLANK_MODEL, otherwise [clank].model
     #[arg(long)]
@@ -308,7 +313,7 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
     };
     // After the invocation itself is valid. `--list-tools` returned above, so a
     // broken file does not block printing the tool list.
-    let file = config::load().map_err(Fail::Usage)?;
+    let file = config::load(args.config.as_deref()).map_err(Fail::Usage)?;
     let settings = settings_from(args, file.as_ref(), config::env_var)?;
     let system = match &args.system {
         Some(s) => format!("{system}\n\n{}", payload(s)?),

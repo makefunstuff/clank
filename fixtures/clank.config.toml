@@ -1,8 +1,8 @@
-# Optional. clank and clank-jev read [clank]. clank-web reads [web].
+# Optional. Read from ./.clank/config.toml in the working directory.
+# --config PATH or CLANK_CONFIG names a different file. Parents are not searched.
 # A missing file leaves flags and the environment in charge.
 # Precedence: flags, then environment, then this file, then built-ins.
 # The key stays in the environment. api_key_env names the variable.
-# An inline api_key is used only when that variable is unset.
 
 [clank]
 base_url = "http://127.0.0.1:8080/v1"

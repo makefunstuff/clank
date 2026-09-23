@@ -12,11 +12,12 @@
 //! results were written, including an empty set; `1` when the search or fetch
 //! did not complete; `2` for usage.
 //!
-//! Optional `.clank/config.toml` (walked up from the working directory) supplies
-//! `[web]`: the default provider, the result cap, the output format, and the
-//! environment variable that holds each key. `[clank]` in that file is the chat
-//! endpoint and is ignored here. A missing file leaves Brave, five results, and
-//! JSONL in charge. The key itself is never an argument, and it is never printed.
+//! Optional `./.clank/config.toml` supplies `[web]`: the default provider, the
+//! result cap, the output format, and the environment variable that holds each
+//! key. `--config` or `CLANK_CONFIG` names a different file. `[clank]` in that
+//! file is the chat endpoint and is ignored here. A missing file in the working
+//! directory leaves Brave, five results, and JSONL in charge. The key itself is
+//! never an argument, and it is never printed.
 //!
 //! One request per invocation. `--fetch` is one GET of one URL: no JavaScript,
 //! no crawl, no second request that follows a link the page named.
@@ -26,6 +27,7 @@ mod config;
 use clap::Parser;
 use serde_json::{json, Value};
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 const BRAVE_ENDPOINT: &str = "https://api.search.brave.com/res/v1/web/search";
@@ -53,10 +55,11 @@ const USAGE: i32 = 2;
       clank-web \"rust sigpipe\" | clank -m \"summarize with citations\"\n  \
       printf '%s\\n' \"$query\" | clank-web\n  \
       clank-web --fetch https://example.com | clank -m \"what is this page?\"\n\n\
-      Config: .clank/config.toml, walked up from the working directory.\n\
+      Config: ./.clank/config.toml in the working directory.\n\
+      --config PATH or CLANK_CONFIG names a different file. Parents are not searched.\n\
       [web] is for this binary. [clank] is for clank and clank-jev, and is ignored here.\n\
       Precedence: flags, then the environment, then the file, then built-ins.\n\
-      A missing file is not an error. Keys come from the environment."
+      A missing working-directory file is not an error. Keys come from the environment."
 )]
 struct Args {
     /// search query; otherwise the query is read from stdin
@@ -78,6 +81,10 @@ struct Args {
     /// replaces the provider endpoint, for a proxy or a stub
     #[arg(long, value_name = "URL", conflicts_with = "fetch")]
     base_url: Option<String>,
+
+    /// config file; otherwise CLANK_CONFIG, otherwise ./.clank/config.toml
+    #[arg(long, value_name = "PATH")]
+    config: Option<PathBuf>,
 
     /// GET this URL and print one result; no search, no key
     #[arg(long, value_name = "URL")]
@@ -637,7 +644,7 @@ fn run(args: Args) -> i32 {
         eprintln!("clank-web: --timeout must be at least 1");
         return USAGE;
     }
-    let file = match config::load() {
+    let file = match config::load(args.config.as_deref()) {
         Ok(f) => f,
         Err(e) => {
             eprintln!("clank-web: {e}");
