@@ -19,11 +19,6 @@
 //! directory leaves Brave, five results, and JSONL in charge. The key itself is
 //! never an argument, and it is never printed.
 //!
-//! Firecrawl, Exa, and Perplexity also have cloud endpoints. SearXNG does not:
-//! its request URL comes from `--base-url` or `[web.searxng].base_url`. The same
-//! two fields point the other three at a local instance, and a URL supplied that
-//! way does not require a key. Brave and Tavily always do.
-//!
 //! One request per invocation. `--fetch` is one GET of one URL: no JavaScript,
 //! no crawl, no second request that follows a link the page named.
 
@@ -37,17 +32,10 @@ use std::time::{Duration, Instant};
 
 const BRAVE_ENDPOINT: &str = "https://api.search.brave.com/res/v1/web/search";
 const TAVILY_ENDPOINT: &str = "https://api.tavily.com/search";
-const FIRECRAWL_ENDPOINT: &str = "https://api.firecrawl.dev/v1/search";
-const EXA_ENDPOINT: &str = "https://api.exa.ai/search";
-const PERPLEXITY_ENDPOINT: &str = "https://api.perplexity.ai/search";
 const DEFAULT_BRAVE_KEY_ENV: &str = "BRAVE_API_KEY";
 const DEFAULT_TAVILY_KEY_ENV: &str = "TAVILY_API_KEY";
-const DEFAULT_FIRECRAWL_KEY_ENV: &str = "FIRECRAWL_API_KEY";
-const DEFAULT_SEARXNG_KEY_ENV: &str = "SEARXNG_API_KEY";
-const DEFAULT_EXA_KEY_ENV: &str = "EXA_API_KEY";
-const DEFAULT_PERPLEXITY_KEY_ENV: &str = "PERPLEXITY_API_KEY";
 const DEFAULT_LIMIT: u32 = 5;
-/// One cap for every provider. Several of them allow more; this binary does not.
+/// Brave's `count` and Tavily's `max_results` both stop at 20.
 const LIMIT_MAX: u32 = 20;
 const DEFAULT_TIMEOUT_SECS: u64 = 30;
 const FETCH_BYTES: usize = 512 * 1024;
@@ -71,16 +59,14 @@ const USAGE: i32 = 2;
       --config PATH or CLANK_CONFIG names a different file. Parents are not searched.\n\
       [web] is for this binary. [clank] is for clank and clank-jev, and is ignored here.\n\
       Precedence: flags, then the environment, then the file, then built-ins.\n\
-      A missing working-directory file is not an error. Keys come from the environment.\n\
-      Local Firecrawl, SearXNG, Exa, or Perplexity: --base-url or [web.<name>].base_url.\n\
-      SearXNG has no built-in URL. That URL makes the key optional. The cloud URL does not."
+      A missing working-directory file is not an error. Keys come from the environment."
 )]
 struct Args {
     /// search query; otherwise the query is read from stdin
     #[arg(value_name = "QUERY", conflicts_with = "fetch")]
     query: Option<String>,
 
-    /// provider: brave (default), tavily, firecrawl, searxng, exa, or perplexity
+    /// provider: brave (default) or tavily
     #[arg(long, value_name = "NAME", conflicts_with = "fetch")]
     provider: Option<String>,
 
@@ -92,7 +78,7 @@ struct Args {
     #[arg(long, value_name = "jsonl|text")]
     format: Option<String>,
 
-    /// replaces the provider request URL: a local instance, a proxy, or a stub
+    /// replaces the provider endpoint, for a proxy or a stub
     #[arg(long, value_name = "URL", conflicts_with = "fetch")]
     base_url: Option<String>,
 
@@ -117,10 +103,6 @@ struct Args {
 enum Provider {
     Brave,
     Tavily,
-    Firecrawl,
-    Searxng,
-    Exa,
-    Perplexity,
 }
 
 impl Provider {
@@ -128,10 +110,6 @@ impl Provider {
         match name {
             "brave" => Some(Provider::Brave),
             "tavily" => Some(Provider::Tavily),
-            "firecrawl" => Some(Provider::Firecrawl),
-            "searxng" => Some(Provider::Searxng),
-            "exa" => Some(Provider::Exa),
-            "perplexity" => Some(Provider::Perplexity),
             _ => None,
         }
     }
@@ -140,22 +118,13 @@ impl Provider {
         match self {
             Provider::Brave => "brave",
             Provider::Tavily => "tavily",
-            Provider::Firecrawl => "firecrawl",
-            Provider::Searxng => "searxng",
-            Provider::Exa => "exa",
-            Provider::Perplexity => "perplexity",
         }
     }
 
-    /// Cloud request URL. SearXNG has no public default; the caller names one.
-    fn default_endpoint(self) -> Option<&'static str> {
+    fn default_endpoint(self) -> &'static str {
         match self {
-            Provider::Brave => Some(BRAVE_ENDPOINT),
-            Provider::Tavily => Some(TAVILY_ENDPOINT),
-            Provider::Firecrawl => Some(FIRECRAWL_ENDPOINT),
-            Provider::Searxng => None,
-            Provider::Exa => Some(EXA_ENDPOINT),
-            Provider::Perplexity => Some(PERPLEXITY_ENDPOINT),
+            Provider::Brave => BRAVE_ENDPOINT,
+            Provider::Tavily => TAVILY_ENDPOINT,
         }
     }
 
@@ -163,20 +132,6 @@ impl Provider {
         match self {
             Provider::Brave => DEFAULT_BRAVE_KEY_ENV,
             Provider::Tavily => DEFAULT_TAVILY_KEY_ENV,
-            Provider::Firecrawl => DEFAULT_FIRECRAWL_KEY_ENV,
-            Provider::Searxng => DEFAULT_SEARXNG_KEY_ENV,
-            Provider::Exa => DEFAULT_EXA_KEY_ENV,
-            Provider::Perplexity => DEFAULT_PERPLEXITY_KEY_ENV,
-        }
-    }
-
-    /// Brave and Tavily are hosted APIs. The others can run on a URL the caller
-    /// set, and SearXNG always does. A caller-supplied URL does not require a key.
-    fn requires_key(self, caller_url: bool) -> bool {
-        match self {
-            Provider::Brave | Provider::Tavily => true,
-            Provider::Searxng => false,
-            Provider::Firecrawl | Provider::Exa | Provider::Perplexity => !caller_url,
         }
     }
 }
@@ -194,7 +149,7 @@ struct Hit {
 struct Resolved {
     provider: Provider,
     endpoint: String,
-    api_key: Option<String>,
+    api_key: String,
     limit: u32,
     text: bool,
 }
@@ -207,15 +162,7 @@ fn section_keys(web: &config::Web, provider: Provider) -> &config::ProviderKeys 
     match provider {
         Provider::Brave => &web.brave,
         Provider::Tavily => &web.tavily,
-        Provider::Firecrawl => &web.firecrawl,
-        Provider::Searxng => &web.searxng,
-        Provider::Exa => &web.exa,
-        Provider::Perplexity => &web.perplexity,
     }
-}
-
-fn providers() -> String {
-    config::WEB_PROVIDERS.join(", ")
 }
 
 /// Flags, then `[web]`, then built-ins. The search endpoint is `--base-url` or
@@ -235,9 +182,9 @@ fn resolve(
         }
     }
     let provider = if let Some(name) = provider_flag {
-        Provider::parse(name).ok_or_else(|| (format!("unknown --provider {name:?} ({})", providers()), USAGE))?
+        Provider::parse(name).ok_or_else(|| (format!("unknown --provider {name:?} (brave, tavily)"), USAGE))?
     } else if let Some(name) = web.and_then(|w| w.default_provider.as_deref()) {
-        Provider::parse(name).ok_or_else(|| (format!("unknown provider {name:?} ({})", providers()), USAGE))?
+        Provider::parse(name).ok_or_else(|| (format!("unknown provider {name:?} (brave, tavily)"), USAGE))?
     } else {
         Provider::Brave
     };
@@ -254,31 +201,18 @@ fn resolve(
     let keys = web.map(|w| section_keys(w, provider));
     let named = keys.and_then(|k| k.api_key_env.as_deref());
     let inline = keys.and_then(|k| k.api_key.as_deref());
-    let configured = keys.and_then(|k| k.base_url.as_deref()).map(str::trim).filter(|s| !s.is_empty());
-    // The flag and the provider section are the request URL itself, not an origin
-    // to join a path onto. SearXNG has no cloud URL to fall back to.
-    let (endpoint, caller_url) = if let Some(url) = base_url {
-        (url.to_string(), true)
-    } else if let Some(url) = configured {
-        (url.to_string(), true)
-    } else if let Some(url) = provider.default_endpoint() {
-        (url.to_string(), false)
-    } else {
-        let name = provider.name();
-        return Err((
-            format!("{name} has no built-in URL: set --base-url or [web.{name}].base_url"),
-            USAGE,
-        ));
+    let api_key = match config::key_from(named, inline, Some(provider.default_key_env()), &env) {
+        Some(k) => k,
+        None => {
+            let name = named.unwrap_or(provider.default_key_env());
+            let msg = match (named, file) {
+                (Some(_), Some(f)) => format!("no API key: {} names {name}, and it is unset or empty", f.path.display()),
+                _ => format!("no API key: set {name}"),
+            };
+            return Err((msg, FAIL));
+        }
     };
-    let api_key = config::key_from(named, inline, Some(provider.default_key_env()), &env);
-    if api_key.is_none() && provider.requires_key(caller_url) {
-        let name = named.unwrap_or(provider.default_key_env());
-        let msg = match (named, file) {
-            (Some(_), Some(f)) => format!("no API key: {} names {name}, and it is unset or empty", f.path.display()),
-            _ => format!("no API key: set {name}"),
-        };
-        return Err((msg, FAIL));
-    }
+    let endpoint = base_url.unwrap_or_else(|| provider.default_endpoint()).to_string();
     Ok(Resolved { provider, endpoint, api_key, limit, text })
 }
 
@@ -384,88 +318,35 @@ fn take_response(mut resp: ureq::http::Response<ureq::Body>, cap: usize) -> Resu
 }
 
 fn hide(resolved: &Resolved, text: &str) -> String {
-    match resolved.api_key.as_deref() {
-        Some(secret) => config::redact(text, secret),
-        None => text.to_string(),
-    }
-}
-
-fn auth_header(resolved: &Resolved) -> Option<(&'static str, String)> {
-    let key = resolved.api_key.as_deref()?;
-    Some(match resolved.provider {
-        Provider::Brave => ("X-Subscription-Token", key.to_string()),
-        Provider::Exa => ("x-api-key", key.to_string()),
-        Provider::Tavily | Provider::Firecrawl | Provider::Perplexity | Provider::Searxng => {
-            ("Authorization", format!("Bearer {key}"))
-        }
-    })
-}
-
-fn get_json(agent: &ureq::Agent, url: &str, auth: Option<(&str, &str)>) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
-    let req = agent.get(url).header("Accept", "application/json");
-    match auth {
-        Some((name, value)) => req.header(name, value).call(),
-        None => req.call(),
-    }
-}
-
-fn post_json(
-    agent: &ureq::Agent,
-    url: &str,
-    body: &Value,
-    auth: Option<(&str, &str)>,
-) -> Result<ureq::http::Response<ureq::Body>, ureq::Error> {
-    let req = agent.post(url).header("Content-Type", "application/json");
-    match auth {
-        Some((name, value)) => req.header(name, value).send_json(body),
-        None => req.send_json(body),
-    }
+    config::redact(text, &resolved.api_key)
 }
 
 fn search(timeout: u64, resolved: &Resolved, query: &str) -> Result<(Vec<Hit>, u32), String> {
     let agent = agent(timeout);
-    let owned = auth_header(resolved);
-    let auth = owned.as_ref().map(|(name, value)| (*name, value.as_str()));
-    let failed = |e: ureq::Error| hide(resolved, &format!("request to {} failed: {e}", resolved.endpoint));
     let resp = match resolved.provider {
         Provider::Brave => {
             let url = with_query(&resolved.endpoint, &[("q", query), ("count", &resolved.limit.to_string())]);
-            get_json(&agent, &url, auth).map_err(failed)?
-        }
-        Provider::Searxng => {
-            // `format=json` is the instance's JSON switch. The key, when there is
-            // one, stays in the header so it does not land in an access log.
-            let url = with_query(&resolved.endpoint, &[("q", query), ("format", "json")]);
-            get_json(&agent, &url, auth).map_err(failed)?
+            agent
+                .get(&url)
+                .header("Accept", "application/json")
+                .header("X-Subscription-Token", &resolved.api_key)
+                .call()
+                .map_err(|e| hide(resolved, &format!("request to {} failed: {e}", resolved.endpoint)))?
         }
         Provider::Tavily => {
             // An unspecified depth can be promoted to advanced (two credits).
-            // One invocation is one basic search. The key is not in the body.
+            // One invocation is one basic search.
             let body = json!({
                 "query": query,
                 "max_results": resolved.limit,
                 "search_depth": "basic",
             });
-            post_json(&agent, &resolved.endpoint, &body, auth).map_err(failed)?
-        }
-        Provider::Firecrawl => {
-            // No scrapeOptions: that would fetch each hit, a second request.
-            let body = json!({ "query": query, "limit": resolved.limit });
-            post_json(&agent, &resolved.endpoint, &body, auth).map_err(failed)?
-        }
-        Provider::Exa => {
-            // Highlights are the snippet. `deep` and `stream` are a different product.
-            let body = json!({
-                "query": query,
-                "numResults": resolved.limit,
-                "contents": { "highlights": true },
-            });
-            post_json(&agent, &resolved.endpoint, &body, auth).map_err(failed)?
-        }
-        Provider::Perplexity => {
-            // The Search API, not a Sonar chat completion.
-            let body = json!({ "query": query, "max_results": resolved.limit });
-            post_json(&agent, &resolved.endpoint, &body, auth).map_err(failed)?
+            agent
+                .post(&resolved.endpoint)
+                .header("Content-Type", "application/json")
+                .header("Authorization", format!("Bearer {}", resolved.api_key))
+                .send_json(&body)
+                .map_err(|e| hide(resolved, &format!("request to {} failed: {e}", resolved.endpoint)))?
         }
     };
     let raw = take_response(resp, SEARCH_BODY_CAP)?;
@@ -476,18 +357,26 @@ fn search(timeout: u64, resolved: &Resolved, query: &str) -> Result<(Vec<Hit>, u
         return Err(hide(resolved, &http_failure(raw.status_label, &raw.body)));
     }
     let payload: Value = serde_json::from_str(&raw.body).map_err(|e| hide(resolved, &format!("provider returned non-JSON: {e}")))?;
-    if matches!(payload.get("error"), Some(err) if !err.is_null()) {
-        return Err(hide(resolved, &format!("provider returned an error: {}", error_detail(&raw.body))));
-    }
-    if resolved.provider == Provider::Firecrawl && payload.get("success") == Some(&Value::Bool(false)) {
+    if payload.get("error").is_some() {
         return Err(hide(resolved, &format!("provider returned an error: {}", error_detail(&raw.body))));
     }
     parse_hits(resolved.provider, &payload)
 }
 
 fn parse_hits(provider: Provider, payload: &Value) -> Result<(Vec<Hit>, u32), String> {
-    let Some(arr) = result_list(provider, payload)? else {
-        return Ok((Vec::new(), 0));
+    let arr = match provider {
+        Provider::Brave => match payload.get("web") {
+            None | Some(Value::Null) => return Ok((Vec::new(), 0)),
+            Some(web) => web.get("results").and_then(Value::as_array).ok_or("brave response has web but no results array")?,
+        },
+        Provider::Tavily => match payload.get("results") {
+            None | Some(Value::Null) => return Ok((Vec::new(), 0)),
+            Some(results) => results.as_array().ok_or("tavily response has results but it is not an array")?,
+        },
+    };
+    let snippet_key = match provider {
+        Provider::Brave => "description",
+        Provider::Tavily => "content",
     };
     let mut hits = Vec::new();
     let mut skipped = 0u32;
@@ -500,7 +389,7 @@ fn parse_hits(provider: Provider, payload: &Value) -> Result<(Vec<Hit>, u32), St
         hits.push(Hit {
             title: item.get("title").and_then(Value::as_str).unwrap_or("").trim().to_string(),
             url: url.to_string(),
-            snippet: snippet_of(provider, item),
+            snippet: item.get(snippet_key).and_then(Value::as_str).unwrap_or("").trim().to_string(),
             truncated: false,
         });
     }
@@ -508,60 +397,6 @@ fn parse_hits(provider: Provider, payload: &Value) -> Result<(Vec<Hit>, u32), St
         return Err(format!("provider returned {skipped} results and none had a url"));
     }
     Ok((hits, skipped))
-}
-
-fn result_list<'a>(provider: Provider, payload: &'a Value) -> Result<Option<&'a Vec<Value>>, String> {
-    match provider {
-        Provider::Brave => match payload.get("web") {
-            None | Some(Value::Null) => Ok(None),
-            Some(web) => match web.get("results") {
-                Some(results) => results
-                    .as_array()
-                    .map(Some)
-                    .ok_or_else(|| "brave response has web but no results array".into()),
-                None => Err("brave response has web but no results array".into()),
-            },
-        },
-        Provider::Firecrawl => match payload.get("data") {
-            None | Some(Value::Null) => Ok(None),
-            Some(Value::Array(items)) => Ok(Some(items)),
-            Some(data) => match data.get("web") {
-                None | Some(Value::Null) => Ok(None),
-                Some(web) => web
-                    .as_array()
-                    .map(Some)
-                    .ok_or_else(|| "firecrawl response has data.web but it is not an array".into()),
-            },
-        },
-        Provider::Tavily | Provider::Searxng | Provider::Exa | Provider::Perplexity => match payload.get("results") {
-            None | Some(Value::Null) => Ok(None),
-            Some(results) => results.as_array().map(Some).ok_or_else(|| {
-                format!("{} response has results but it is not an array", provider.name())
-            }),
-        },
-    }
-}
-
-fn snippet_of(provider: Provider, item: &Value) -> String {
-    match provider {
-        Provider::Brave | Provider::Firecrawl => text_field(item, "description"),
-        Provider::Tavily | Provider::Searxng => text_field(item, "content"),
-        Provider::Perplexity => text_field(item, "snippet"),
-        Provider::Exa => exa_snippet(item),
-    }
-}
-
-fn text_field(item: &Value, key: &str) -> String {
-    item.get(key).and_then(Value::as_str).unwrap_or("").trim().to_string()
-}
-
-fn exa_snippet(item: &Value) -> String {
-    if let Some(list) = item.get("highlights").and_then(Value::as_array) {
-        if let Some(text) = list.iter().find_map(|v| v.as_str().map(str::trim).filter(|s| !s.is_empty())) {
-            return text.to_string();
-        }
-    }
-    text_field(item, "text")
 }
 
 fn fetch_url(timeout: u64, url: &str, cap: usize) -> Result<Hit, String> {
@@ -937,7 +772,7 @@ mod tests {
         assert_eq!(got.provider, Provider::Brave);
         assert_eq!(got.limit, 2);
         assert!(!got.text);
-        assert_eq!(got.api_key.as_deref(), Some("k"));
+        assert_eq!(got.api_key, "k");
         assert_eq!(got.endpoint, BRAVE_ENDPOINT, "[clank].base_url is a chat server");
 
         let from_file = resolve(None, None, None, None, Some(&cfg), env_of(&[("TAVILY_API_KEY", "t")])).unwrap();
@@ -948,7 +783,7 @@ mod tests {
 
         let both = resolve(None, None, None, None, None, env_of(&[("BRAVE_API_KEY", "a"), ("TAVILY_API_KEY", "b")])).unwrap();
         assert_eq!(both.provider, Provider::Brave);
-        assert_eq!(both.api_key.as_deref(), Some("a"));
+        assert_eq!(both.api_key, "a");
         assert_eq!(both.limit, DEFAULT_LIMIT);
 
         let err = resolve(None, None, None, None, None, env_of(&[("TAVILY_API_KEY", "t")])).unwrap_err();
@@ -965,9 +800,9 @@ mod tests {
 
         let named = file("[web.brave]\napi_key_env = \"SEARCH_TOKEN\"\napi_key = \"inline-secret\"\n");
         let got = resolve(None, None, None, None, Some(&named), env_of(&[("BRAVE_API_KEY", "not-this"), ("SEARCH_TOKEN", "from-env")])).unwrap();
-        assert_eq!(got.api_key.as_deref(), Some("from-env"));
+        assert_eq!(got.api_key, "from-env");
         let got = resolve(None, None, None, None, Some(&named), env_of(&[("BRAVE_API_KEY", "not-this")])).unwrap();
-        assert_eq!(got.api_key.as_deref(), Some("inline-secret"));
+        assert_eq!(got.api_key, "inline-secret");
 
         let err = resolve(Some("nope"), None, None, None, None, env_of(&[])).unwrap_err();
         assert_eq!(err.1, USAGE);
@@ -1000,78 +835,6 @@ mod tests {
         assert!(parse_hits(Provider::Brave, &json!({"web": {"results": [{"title": "x"}]}})).is_err());
         let (hits, _) = parse_hits(Provider::Brave, &json!({})).unwrap();
         assert!(hits.is_empty());
-
-        let (hits, skipped) = parse_hits(Provider::Firecrawl, &json!({"success": true, "data": [
-            {"title": "F", "url": "https://f.example", "description": "v1"}
-        ]})).unwrap();
-        assert_eq!(skipped, 0);
-        assert_eq!(hits[0].snippet, "v1");
-        let (hits, _) = parse_hits(Provider::Firecrawl, &json!({"success": true, "data": {"web": [
-            {"title": "F2", "url": "https://f2.example", "description": "v2"}
-        ]}})).unwrap();
-        assert_eq!(hits[0].snippet, "v2");
-
-        let (hits, _) = parse_hits(Provider::Searxng, &json!({"results": [
-            {"title": "S", "url": "https://s.example", "content": "engine"}
-        ]})).unwrap();
-        assert_eq!(hits[0].snippet, "engine");
-
-        let (hits, _) = parse_hits(Provider::Exa, &json!({"results": [
-            {"title": "E", "url": "https://e.example", "highlights": ["", "first hit"], "text": "page"}
-        ]})).unwrap();
-        assert_eq!(hits[0].snippet, "first hit");
-        let (hits, _) = parse_hits(Provider::Exa, &json!({"results": [
-            {"title": "E2", "url": "https://e2.example", "text": "page body"}
-        ]})).unwrap();
-        assert_eq!(hits[0].snippet, "page body");
-
-        let (hits, _) = parse_hits(Provider::Perplexity, &json!({"results": [
-            {"title": "P", "url": "https://p.example", "snippet": "cited"}
-        ]})).unwrap();
-        assert_eq!(hits[0].snippet, "cited");
-    }
-
-    #[test]
-    fn a_caller_url_is_the_endpoint_and_searxng_has_no_built_in() {
-        for name in config::WEB_PROVIDERS {
-            assert!(Provider::parse(name).is_some(), "{name}");
-        }
-
-        let local = "http://127.0.0.1:9/v1/search";
-        let got = resolve(Some("firecrawl"), Some(local), None, None, None, env_of(&[])).unwrap();
-        assert_eq!(got.endpoint, local);
-        assert_eq!(got.api_key, None);
-        let cloud = resolve(Some("firecrawl"), None, None, None, None, env_of(&[])).unwrap_err();
-        assert_eq!(cloud.1, FAIL, "{:?}", cloud.0);
-        assert!(cloud.0.contains("FIRECRAWL_API_KEY"), "{}", cloud.0);
-
-        let cfg = file("[web.firecrawl]\nbase_url = \"http://127.0.0.1:9/v1/search\"\n");
-        let got = resolve(Some("firecrawl"), None, None, None, Some(&cfg), env_of(&[])).unwrap();
-        assert_eq!(got.endpoint, "http://127.0.0.1:9/v1/search");
-        assert_eq!(got.api_key, None);
-        let got = resolve(Some("firecrawl"), Some(local), None, None, Some(&cfg), env_of(&[("FIRECRAWL_API_KEY", "fc")])).unwrap();
-        assert_eq!(got.endpoint, local, "the flag beats the file");
-        assert_eq!(got.api_key.as_deref(), Some("fc"));
-
-        let missing = resolve(Some("searxng"), None, None, None, None, env_of(&[("SEARXNG_API_KEY", "s")])).unwrap_err();
-        assert_eq!(missing.1, USAGE, "{:?}", missing.0);
-        assert!(missing.0.contains("--base-url"), "{}", missing.0);
-        assert!(missing.0.contains("[web.searxng].base_url"), "{}", missing.0);
-        let cfg = file("[web.searxng]\nbase_url = \"http://127.0.0.1:9/search\"\n");
-        let got = resolve(Some("searxng"), None, None, None, Some(&cfg), env_of(&[])).unwrap();
-        assert_eq!(got.endpoint, "http://127.0.0.1:9/search");
-        assert_eq!(got.api_key, None);
-
-        for (name, env_name) in [("exa", "EXA_API_KEY"), ("perplexity", "PERPLEXITY_API_KEY")] {
-            let err = resolve(Some(name), None, None, None, None, env_of(&[])).unwrap_err();
-            assert_eq!(err.1, FAIL, "{name}: {}", err.0);
-            assert!(err.0.contains(env_name), "{name}: {}", err.0);
-            let got = resolve(Some(name), Some("http://127.0.0.1:9/search"), None, None, None, env_of(&[])).unwrap();
-            assert_eq!(got.api_key, None, "{name}");
-        }
-
-        let brave = resolve(Some("brave"), Some("http://127.0.0.1:9/search"), None, None, None, env_of(&[])).unwrap_err();
-        assert_eq!(brave.1, FAIL, "a stub URL does not drop the Brave key: {}", brave.0);
     }
 
     #[test]

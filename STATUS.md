@@ -57,18 +57,15 @@ says where the project is, what is open, and how to check any of it.
 - `clank` 0.1.0: one prompt, one request, one answer — the six invariants in
   PROTOCOL.md. `clank-jev` 0.1.0: typed decisions for routing, providers
   `typesafe`, `openrouter`, `kev`. `clank-web`: one search or one fetch,
-  providers `brave` (the default), `tavily`, `firecrawl`, `searxng`, `exa`, and
-  `perplexity`. SearXNG and any other local instance is a request URL
-  (`--base-url` or `[web.<provider>].base_url`), not a built-in host. Optional
-  `./.clank/config.toml` in the working directory (`--config` or `CLANK_CONFIG`
-  to name another file): `[clank]` is the model and endpoint for `clank` and
-  `clank-jev`; `[web]` is search settings for `clank-web`. No built-in chat
-  model or base URL.
-- 128 tests (`cargo test`), all against stub servers: no model, no key, no
+  providers `brave` (the default) and `tavily`. Optional `./.clank/config.toml`
+  in the working directory (`--config` or `CLANK_CONFIG` to name another file):
+  `[clank]` is the model and endpoint for `clank` and `clank-jev`; `[web]` is
+  search settings for `clank-web`. No built-in chat model or base URL.
+- 121 tests (`cargo test`), all against stub servers: no model, no key, no
   network. `tests/wire.rs` (24, the protocol), `tests/jev.rs` (10, the decision
-  stage), `tests/jev_ci_stub.rs` (1), `tests/web.rs` (15, the search stage),
-  `tests/config.rs` (10, the shared file), `tests/docs.rs` (8, docs vs code),
-  `tests/rules.rs` (3, the rules themselves), plus 57 unit tests in `src/`.
+  stage), `tests/jev_ci_stub.rs` (1), `tests/web.rs` (10, the search stage),
+  `tests/config.rs` (9, the shared file), `tests/docs.rs` (8, docs vs code),
+  `tests/rules.rs` (3, the rules themselves), plus 56 unit tests in `src/`.
 - Package name on crates.io is `clank-cli-app`; the installed binaries remain
   `clank`, `clank-jev` and `clank-web`. Install:
   `cargo install clank-cli-app --locked`.
@@ -89,7 +86,7 @@ says where the project is, what is open, and how to check any of it.
 ## How to check it
 
 ```sh
-cargo test                                            # 128 tests, no model needed
+cargo test                                            # 121 tests, no model needed
 python3 scripts/reflow-docs.py --check $(git ls-files '*.md' ':!fixtures/*')   # doc convention
 sh scripts/jev-ci-stub.sh                             # the CI jev gate, against a local stub
 python3 local/verify-rules.py                         # machine-local scratch: needs jev and a stub

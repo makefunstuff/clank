@@ -124,10 +124,6 @@ fn run(dir: &Path, args: &[&str], env: &[(&str, &str)], stdin: Option<&str>) -> 
         .current_dir(dir)
         .env_remove("BRAVE_API_KEY")
         .env_remove("TAVILY_API_KEY")
-        .env_remove("FIRECRAWL_API_KEY")
-        .env_remove("SEARXNG_API_KEY")
-        .env_remove("EXA_API_KEY")
-        .env_remove("PERPLEXITY_API_KEY")
         .env_remove("CLANK_WEB_TEST_KEY")
         .env_remove("CLANK_CONFIG")
         .stdout(Stdio::piped())
@@ -366,185 +362,12 @@ fn fetch_strips_html_and_a_short_cap_marks_the_line_truncated() {
 }
 
 #[test]
-fn firecrawl_posts_one_search_and_reads_either_shape() {
-    let stub = Stub::start(200, "application/json", &json!({"success": true, "data": [
-        {"title": "F", "url": "https://f.example", "description": "v1 snippet"}
-    ]}).to_string());
-    let dir = Tmp::new();
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["--provider", "firecrawl", "--base-url", &stub.url, "--limit", "3", "widgets"],
-        &[("FIRECRAWL_API_KEY", "fc-test")],
-        None,
-    );
-    assert_eq!(code, 0, "{stderr}");
-    assert_eq!(lines(&stdout)[0]["snippet"], "v1 snippet");
-    let req = stub.only();
-    assert_eq!(req.method, "POST");
-    let body: Value = serde_json::from_str(&req.body).unwrap();
-    assert_eq!(body["query"], "widgets");
-    assert_eq!(body["limit"], 3);
-    assert!(body.get("scrapeOptions").is_none(), "{body}");
-    assert!(body.get("api_key").is_none(), "{body}");
-    assert_eq!(req.headers.get("authorization").map(String::as_str), Some("Bearer fc-test"));
-    assert!(!stderr.contains("fc-test"), "{stderr}");
-
-    let stub = Stub::start(200, "application/json", &json!({"success": true, "data": {"web": [
-        {"title": "F2", "url": "https://f2.example", "description": "v2 snippet"}
-    ]}}).to_string());
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["--provider", "firecrawl", "--base-url", &stub.url, "local"],
-        &[],
-        None,
-    );
-    assert_eq!(code, 0, "{stderr}");
-    assert_eq!(lines(&stdout)[0]["snippet"], "v2 snippet");
-    let req = stub.only();
-    assert!(req.headers.get("authorization").is_none(), "a local URL sends no key: {:?}", req.headers);
-}
-
-#[test]
-fn searxng_queries_json_and_a_missing_url_is_usage() {
-    let dir = Tmp::new();
-    let (stdout, stderr, code) = run(dir.path(), &["--provider", "searxng", "q"], &[("SEARXNG_API_KEY", "sx-secret")], None);
-    assert_eq!(code, 2, "{stderr}");
-    assert!(stdout.is_empty(), "{stdout}");
-    assert!(stderr.contains("--base-url"), "{stderr}");
-    assert!(stderr.contains("[web.searxng].base_url"), "{stderr}");
-    assert!(!stderr.contains("sx-secret"), "{stderr}");
-
-    let stub = Stub::start(200, "application/json", &json!({"results": [
-        {"title": "S", "url": "https://s.example", "content": "from the instance"}
-    ]}).to_string());
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["--provider", "searxng", "--base-url", &stub.url, "piped widgets"],
-        &[],
-        None,
-    );
-    assert_eq!(code, 0, "{stderr}");
-    assert_eq!(lines(&stdout)[0]["snippet"], "from the instance");
-    let req = stub.only();
-    assert_eq!(req.method, "GET");
-    assert!(req.target.contains("q=piped%20widgets"), "{}", req.target);
-    assert!(req.target.contains("format=json"), "{}", req.target);
-    assert!(req.headers.get("authorization").is_none(), "{:?}", req.headers);
-    assert!(!req.target.contains("key"), "{}", req.target);
-
-    let stub = Stub::start(401, "application/json", r#"{"error":"bad sx-secret"}"#);
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["--provider", "searxng", "--base-url", &stub.url, "q"],
-        &[("SEARXNG_API_KEY", "sx-secret")],
-        None,
-    );
-    assert_eq!(code, 1, "{stderr}");
-    assert!(stdout.is_empty(), "{stdout}");
-    assert!(stderr.contains("***"), "{stderr}");
-    assert!(!stderr.contains("sx-secret"), "{stderr}");
-    let req = stub.only();
-    assert_eq!(req.headers.get("authorization").map(String::as_str), Some("Bearer sx-secret"));
-    assert!(!req.target.contains("sx-secret"), "{}", req.target);
-}
-
-#[test]
-fn the_config_file_points_searxng_at_its_instance() {
-    let stub = Stub::start(200, "application/json", &json!({"results": [
-        {"title": "C", "url": "https://c.example", "content": "configured"}
-    ]}).to_string());
-    let dir = Tmp::new();
-    std::fs::create_dir(dir.path().join(".clank")).unwrap();
-    std::fs::write(
-        dir.path().join(".clank/config.toml"),
-        format!("[web.searxng]\nbase_url = \"{}\"\n", stub.url),
-    )
-    .unwrap();
-    let (stdout, stderr, code) = run(dir.path(), &["--provider", "searxng", "from file"], &[], None);
-    assert_eq!(code, 0, "{stderr}");
-    assert_eq!(lines(&stdout)[0]["title"], "C");
-    let req = stub.only();
-    assert!(req.target.contains("q=from%20file"), "{}", req.target);
-    assert!(req.target.contains("format=json"), "{}", req.target);
-}
-
-#[test]
-fn exa_sends_the_key_header_and_reads_the_first_highlight() {
-    let stub = Stub::start(200, "application/json", &json!({"results": [
-        {"title": "E", "url": "https://e.example", "highlights": ["first hit", "second"], "text": "full page"}
-    ]}).to_string());
-    let dir = Tmp::new();
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["--provider", "exa", "--base-url", &stub.url, "--limit", "4", "highlights"],
-        &[("EXA_API_KEY", "exa-test")],
-        None,
-    );
-    assert_eq!(code, 0, "{stderr}");
-    assert_eq!(lines(&stdout)[0]["snippet"], "first hit");
-    let req = stub.only();
-    assert_eq!(req.method, "POST");
-    let body: Value = serde_json::from_str(&req.body).unwrap();
-    assert_eq!(body["query"], "highlights");
-    assert_eq!(body["numResults"], 4);
-    assert_eq!(body["contents"]["highlights"], true);
-    assert!(body.get("stream").is_none(), "{body}");
-    assert!(body.get("api_key").is_none() && body.get("x-api-key").is_none(), "{body}");
-    assert_eq!(req.headers.get("x-api-key").map(String::as_str), Some("exa-test"));
-    assert!(req.headers.get("authorization").is_none(), "{:?}", req.headers);
-    assert!(!stderr.contains("exa-test"), "{stderr}");
-
-    let (stdout, stderr, code) = run(dir.path(), &["--provider", "exa", "cloud"], &[], None);
-    assert_eq!(code, 1, "{stderr}");
-    assert!(stdout.is_empty(), "{stdout}");
-    assert!(stderr.contains("EXA_API_KEY"), "{stderr}");
-}
-
-#[test]
-fn perplexity_posts_the_search_body_and_reads_the_snippet() {
-    let stub = Stub::start(200, "application/json", &json!({"results": [
-        {"title": "P", "url": "https://p.example", "snippet": "cited line"}
-    ]}).to_string());
-    let dir = Tmp::new();
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["--provider", "perplexity", "--base-url", &stub.url, "citations"],
-        &[("PERPLEXITY_API_KEY", "pplx-test")],
-        None,
-    );
-    assert_eq!(code, 0, "{stderr}");
-    assert_eq!(lines(&stdout)[0]["snippet"], "cited line");
-    let req = stub.only();
-    assert_eq!(req.method, "POST");
-    let body: Value = serde_json::from_str(&req.body).unwrap();
-    assert_eq!(body["query"], "citations");
-    assert_eq!(body["max_results"], 5);
-    assert!(body.get("search_context_size").is_none(), "{body}");
-    assert!(body.get("messages").is_none(), "{body}");
-    assert_eq!(req.headers.get("authorization").map(String::as_str), Some("Bearer pplx-test"));
-    assert!(!stderr.contains("pplx-test"), "{stderr}");
-
-    let (stdout, stderr, code) = run(
-        dir.path(),
-        &["--provider", "perplexity", "--base-url", &stub.url, "local"],
-        &[],
-        None,
-    );
-    assert_eq!(code, 0, "{stderr}");
-    assert!(stub.only().headers.get("authorization").is_none());
-    assert_eq!(lines(&stdout)[0]["title"], "P");
-}
-
-#[test]
 fn clank_tools_stay_on_the_local_filesystem() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let tools = std::fs::read_to_string(root.join("src/tools.rs")).unwrap();
     assert!(!tools.contains("clank-web"), "a web search is not a clank tool");
     assert!(!tools.contains("brave"));
     assert!(!tools.contains("tavily"));
-    assert!(!tools.contains("firecrawl"));
-    assert!(!tools.contains("searxng"));
-    assert!(!tools.contains("perplexity"));
     assert!(!tools.contains("config.toml"));
     for rel in ["src/client.rs", "src/context.rs"] {
         let text = std::fs::read_to_string(root.join(rel)).unwrap();

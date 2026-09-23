@@ -134,10 +134,6 @@ fn clear(cmd: &mut Command) {
         "CLANK_DEBUG",
         "BRAVE_API_KEY",
         "TAVILY_API_KEY",
-        "FIRECRAWL_API_KEY",
-        "SEARXNG_API_KEY",
-        "EXA_API_KEY",
-        "PERPLEXITY_API_KEY",
         "CLANK_WEB_TEST_KEY",
         "TYPESAFE_API_KEY",
         "JEV_API_KEY",
@@ -459,28 +455,6 @@ fn a_brave_key_does_not_become_a_clank_or_jev_credential() {
     assert!(jev.stdout.is_empty(), "{}", jev.stdout);
     assert!(!jev.stderr.contains("brave-secret"), "{}", jev.stderr);
     assert!(jev.stderr.contains("TYPESAFE_API_KEY"), "{}", jev.stderr);
-}
-
-#[test]
-fn an_exa_section_does_not_become_a_jev_credential() {
-    let dir = Tmp::new();
-    std::fs::create_dir(dir.path().join(".clank")).unwrap();
-    std::fs::write(dir.path().join(".clank/config.toml"), "[web.exa]\napi_key_env = \"EXA_API_KEY\"\n").unwrap();
-    let jev = spawn(
-        JEV,
-        dir.path(),
-        &["--provider", "typesafe", "--ask", "which?", "--choice", "a,b"],
-        &[("EXA_API_KEY", "exa-secret")],
-        Some("state"),
-    );
-    assert_eq!(jev.code, 3, "{}", jev.stderr);
-    assert!(jev.stdout.is_empty(), "{}", jev.stdout);
-    assert!(!jev.stderr.contains("exa-secret"), "{}", jev.stderr);
-    assert!(jev.stderr.contains("TYPESAFE_API_KEY"), "{}", jev.stderr);
-
-    let listed = spawn(CLANK, dir.path(), &["--list-tools"], &[("EXA_API_KEY", "exa-secret")], None);
-    assert_eq!(listed.code, 0, "{}", listed.stderr);
-    assert!(!listed.stdout.contains("exa-secret"));
 }
 
 #[test]

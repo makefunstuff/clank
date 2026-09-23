@@ -168,27 +168,19 @@ diagnostics. The schema and the sample file are in
 
 | flag | meaning |
 |---|---|
-| `--provider NAME` | `brave` (default), `tavily`, `firecrawl`, `searxng`, `exa`, or `perplexity`. `[web].default_provider` overrides the built-in when the flag is absent |
+| `--provider NAME` | `brave` (default) or `tavily`; `[web].default_provider` overrides the built-in when the flag is absent |
 | `--limit N` | 1..=20, default 5; overrides `[web].limit` |
 | `--format jsonl\|text` | JSONL, or `title<TAB>url<TAB>snippet`; default `jsonl` |
-| `--base-url URL` | provider request URL (a local instance, a proxy, a stub). Beats `[web.<provider>].base_url`. Ignores `[clank].base_url` |
+| `--base-url URL` | replace the provider endpoint (a proxy, a stub). Ignores `[clank].base_url` |
 | `--config PATH` | config file; otherwise `CLANK_CONFIG`, otherwise `./.clank/config.toml` |
 | `--fetch URL` | GET one `http` or `https` URL; no search and no key. Body cap 524288 bytes |
 | `--timeout SECS` | per-request timeout, default 30 |
 | `-q` / `--quiet` | no result-count line on stderr |
 
 `BRAVE_API_KEY` is the Brave subscription token (`X-Subscription-Token`).
-`TAVILY_API_KEY`, `FIRECRAWL_API_KEY`, and `PERPLEXITY_API_KEY` are sent as
-`Authorization: Bearer`. `EXA_API_KEY` is the `x-api-key` header.
-`SEARXNG_API_KEY` is optional and, when set, is the same Bearer header, never a
-query parameter. `[web.<provider>].api_key_env` names a different variable. The
-key stays in the environment. The default provider stays Brave when only some
-other key is set.
-
-SearXNG has no built-in URL: set `--base-url` or `[web.searxng].base_url` to the
-instance's `/search` endpoint (exit 2 otherwise). The same field points
-Firecrawl, Exa, or Perplexity at a local search URL, and that URL makes the key
-optional. The cloud URL still requires one. Brave and Tavily always do.
+`TAVILY_API_KEY` is sent as `Authorization: Bearer`. `[web.brave].api_key_env`
+and `[web.tavily].api_key_env` name a different variable. The key stays in the
+environment. The default provider stays Brave when only `TAVILY_API_KEY` is set.
 
 ```toml
 [web]
@@ -201,19 +193,6 @@ api_key_env = "BRAVE_API_KEY"
 
 [web.tavily]
 api_key_env = "TAVILY_API_KEY"
-
-[web.firecrawl]
-api_key_env = "FIRECRAWL_API_KEY"
-
-[web.searxng]
-api_key_env = "SEARXNG_API_KEY"
-base_url = "http://127.0.0.1:8888/search"
-
-[web.exa]
-api_key_env = "EXA_API_KEY"
-
-[web.perplexity]
-api_key_env = "PERPLEXITY_API_KEY"
 ```
 
 ## Flags
