@@ -43,9 +43,11 @@ Set `CLANK_BASE_URL` and `CLANK_MODEL` (or `--base-url` / `--model`) yourself.
 ## Web search
 
 `clank` tools are local filesystem observation only — no web fetch. For the net,
-compose in the shell (`curl … | clank -m "…"`). A sibling `clank-web` stage
-(search providers + `.clank/config.toml`) is the planned pipe for
-provider-backed search; it will not fold network into `clank`'s tool loop.
+compose in the shell:
+
+```sh
+curl -sL 'https://example.com/page' | clank --thinking off -m 'summarize; cite quotes'
+```
 
 ## Harness cost (dated)
 
