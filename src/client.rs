@@ -52,7 +52,8 @@ pub fn stream_round(
     emit: &mut dyn FnMut(&str),
     on_thinking: &mut dyn FnMut(&str),
 ) -> Result<Round, Fail> {
-    let url = format!("{}/chat/completions", req.base_url);
+    let url = format!("{}/chat/completions", req.base_url.trim_end_matches('/'));
+    let shown_url = crate::redacted_url(&url);
     let mut body = json!({
         "model": req.model,
         "messages": req.messages,
@@ -82,7 +83,7 @@ pub fn stream_round(
         request = request.header("Authorization", format!("Bearer {key}"));
     }
     let mut resp = request.send_json(&body).map_err(|e| {
-        Fail::Model(crate::config::redact(&format!("request to {url} failed: {e}"), req.api_key.unwrap_or("")))
+        Fail::Model(crate::config::redact(&format!("request to {shown_url} failed: {e}"), req.api_key.unwrap_or("")))
     })?;
 
     if resp.status() != 200 {
@@ -101,23 +102,36 @@ pub fn stream_round(
         finish_reason: None,
     };
     let lines = std::io::BufReader::new(resp.body_mut().as_reader()).lines();
+    // A stream is finished when the server says so, with a `finish_reason` or
+    // `[DONE]`. A connection that closes before either is a cut-off answer,
+    // whatever text arrived before it.
+    let mut finished = false;
 
     for line in lines {
         let line = line.map_err(|e| Fail::Model(format!("stream read error: {e}")))?;
         let Some(data) = line.strip_prefix("data:") else { continue };
         let data = data.trim();
-        if data.is_empty() || data == "[DONE]" {
-            if data == "[DONE]" {
-                break;
-            }
+        if data == "[DONE]" {
+            finished = true;
+            break;
+        }
+        if data.is_empty() {
             continue;
         }
-        let Ok(v) = serde_json::from_str::<Value>(data) else { continue };
+        let v = serde_json::from_str::<Value>(data).map_err(|e| {
+            let head: String = data.chars().take(200).collect();
+            Fail::Model(format!("the server sent a stream event that is not JSON ({e}): {head}"))
+        })?;
+        if let Some(err) = v.get("error") {
+            let detail = crate::config::redact(&err.to_string(), req.api_key.unwrap_or(""));
+            return Err(Fail::Model(format!("the server reported an error mid-stream: {detail}")));
+        }
 
         let Some(choices) = v.get("choices").and_then(|c| c.as_array()) else { continue };
         for ch in choices {
             if let Some(fr) = ch.get("finish_reason").and_then(|f| f.as_str()) {
                 round.finish_reason = Some(fr.to_string());
+                finished = true;
             }
             let Some(delta) = ch.get("delta") else { continue };
             if let Some(t) = delta.get("content").and_then(|c| c.as_str()) {
@@ -155,5 +169,12 @@ pub fn stream_round(
         }
     }
 
+    if !finished {
+        return Err(Fail::Model(
+            "the stream ended before the server finished the answer (no finish_reason, no [DONE]); \
+             what was printed is incomplete"
+                .into(),
+        ));
+    }
     Ok(round)
 }

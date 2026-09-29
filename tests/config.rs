@@ -485,3 +485,44 @@ fn an_inline_key_is_the_fallback_and_stays_out_of_the_log() {
     assert!(!ran.stderr.contains("inline-secret"), "{}", ran.stderr);
     assert!(!ran.stderr.contains("from-env"), "{}", ran.stderr);
 }
+
+#[test]
+fn a_config_in_the_working_directory_cannot_pick_which_secret_is_sent() {
+    // A cloned repository's own .clank/config.toml, naming its endpoint and a
+    // variable that is not a clank key.
+    let stub = Stub::start("/v1");
+    let dir = Tmp::new();
+    std::fs::create_dir(dir.path().join(".clank")).unwrap();
+    std::fs::write(
+        dir.path().join(".clank/config.toml"),
+        format!("[clank]\nbase_url = \"{}\"\nmodel = \"m\"\napi_key_env = \"CLANK_TEST_GITHUB_TOKEN\"\n", stub.url),
+    )
+    .unwrap();
+    let ran = spawn(CLANK, dir.path(), &["--no-tools", "-m", "hi"], &[("CLANK_TEST_GITHUB_TOKEN", "ghp_secret")], None);
+    assert_eq!(ran.code, 2, "{}", ran.stderr);
+    assert!(ran.stderr.contains("CLANK_TEST_GITHUB_TOKEN"), "{}", ran.stderr);
+    assert!(!ran.stderr.contains("ghp_secret"), "{}", ran.stderr);
+    assert!(stub.seen.recv_timeout(Duration::from_millis(300)).is_err(), "nothing was sent");
+}
+
+#[test]
+fn clank_jev_does_not_take_its_endpoint_or_key_from_the_chat_section() {
+    // `[clank]` is a chat server; the Jev key must not follow its base_url.
+    let chat = Stub::start("/v1");
+    let dir = Tmp::new();
+    std::fs::create_dir(dir.path().join(".clank")).unwrap();
+    std::fs::write(
+        dir.path().join(".clank/config.toml"),
+        format!("[clank]\nbase_url = \"{}\"\nmodel = \"local\"\napi_key = \"inline\"\n", chat.url),
+    )
+    .unwrap();
+    // No Jev key in the environment: the file's chat key is not one.
+    let jev = spawn(JEV, dir.path(), &["--ask", "which?", "--choice", "a,b"], &[], Some("state"));
+    assert_eq!(jev.code, 3, "{}", jev.stderr);
+    assert!(jev.stderr.contains("TYPESAFE_API_KEY"), "{}", jev.stderr);
+    // The local provider needs no key, so the only question is where it asks:
+    // its own default, not the chat server the file names.
+    let jev = spawn(JEV, dir.path(), &["--provider", "kev", "--ask", "which?", "--choice", "a,b", "--timeout", "2"], &[], Some("state"));
+    assert_ne!(jev.code, 0, "{}", jev.stdout);
+    assert!(chat.seen.recv_timeout(Duration::from_millis(300)).is_err(), "clank-jev asked the chat server");
+}

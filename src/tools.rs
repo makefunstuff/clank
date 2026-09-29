@@ -98,7 +98,20 @@ pub fn definitions() -> Value {
 
 /// Execute a tool. Returns (output, ok). Errors are returned as data, so the
 /// model can react to them; only server-level failures kill the process.
+///
+/// Every path is confined to the working directory: the model's request is
+/// input nobody reviewed, and a piped document or a config's system text can
+/// ask for `~/.ssh`. Evidence from anywhere else is piped in by the shell.
 pub fn execute(name: &str, args: &Value) -> (String, bool) {
+    let path = match name {
+        "search" => Some(need(args, "path").unwrap_or(".")),
+        _ => need(args, "path"),
+    };
+    if let Some(path) = path {
+        if let Err(e) = confine(path) {
+            return (format!("error: {e}"), false);
+        }
+    }
     let res = match name {
         "read_file" => read_file(args),
         "list_dir" => list_dir(args),
@@ -112,6 +125,19 @@ pub fn execute(name: &str, args: &Value) -> (String, bool) {
     }
 }
 
+/// `path` must resolve, symlinks followed, to the working directory or below it.
+fn confine(path: &str) -> Result<(), String> {
+    let cwd = std::env::current_dir()
+        .and_then(|d| d.canonicalize())
+        .map_err(|e| format!("working directory: {e}"))?;
+    let real = Path::new(path).canonicalize().map_err(|e| format!("cannot access {path}: {e}"))?;
+    if real.starts_with(&cwd) {
+        Ok(())
+    } else {
+        Err(format!("{path} is outside the working directory; pipe it in instead"))
+    }
+}
+
 fn need<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
     args.get(key).and_then(|v| v.as_str())
 }
@@ -119,10 +145,35 @@ fn need<'a>(args: &'a Value, key: &str) -> Option<&'a str> {
 const DEFAULT_READ_LINES: usize = 400;
 
 fn read_file(args: &Value) -> Result<String, String> {
+    use std::io::Read;
     let path = need(args, "path").ok_or_else(|| "missing required arg: path".to_string())?;
-    let text = fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
-    let lines: Vec<&str> = text.split('\n').collect();
+    let file = fs::File::open(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let meta = file.metadata().map_err(|e| format!("cannot read {path}: {e}"))?;
+    // A device or a FIFO has no end to read to; a huge file is not a lookup.
+    if !meta.is_file() {
+        return Err(format!("{path}: not a regular file"));
+    }
+    if meta.len() > MAX_FILE_BYTES {
+        return Err(format!(
+            "{path} is {} bytes; read_file reads at most {MAX_FILE_BYTES}. Use search, or pipe a slice",
+            meta.len()
+        ));
+    }
+    let mut bytes = Vec::new();
+    file.take(MAX_FILE_BYTES + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("cannot read {path}: {e}"))?;
+    if bytes.len() as u64 > MAX_FILE_BYTES {
+        return Err(format!("{path} grew past {MAX_FILE_BYTES} bytes while it was read"));
+    }
+    let text = String::from_utf8(bytes).map_err(|e| format!("cannot read {path}: not UTF-8 text ({e})"))?;
+    // `lines` ends a line at `\n` or `\r\n` and does not count the empty
+    // string after a final newline as a line of its own.
+    let lines: Vec<&str> = text.lines().collect();
     let total = lines.len();
+    if total == 0 {
+        return Ok(format!("{path} (0 lines)\n"));
+    }
     let start = args.get("start_line").and_then(|v| v.as_u64()).unwrap_or(1).max(1) as usize;
     let end = args
         .get("end_line")
@@ -300,7 +351,8 @@ fn walk_one(
             continue;
         }
         *count += 1;
-        if *count >= SEARCH_CAP {
+        if *count > SEARCH_CAP {
+            *count = SEARCH_CAP;
             *truncated = true;
             return;
         }
@@ -362,11 +414,12 @@ fn walk_dir(
 
 fn stat(args: &Value) -> Result<String, String> {
     let path = need(args, "path").ok_or_else(|| "missing required arg: path".to_string())?;
-    let md = fs::metadata(path).map_err(|e| format!("cannot stat {path}: {e}"))?;
-    let kind = if md.is_dir() {
-        "dir"
-    } else if md.is_symlink() {
+    // `symlink_metadata`: `metadata` follows the link, so it could never say "symlink".
+    let md = fs::symlink_metadata(path).map_err(|e| format!("cannot stat {path}: {e}"))?;
+    let kind = if md.is_symlink() {
         "symlink"
+    } else if md.is_dir() {
+        "dir"
     } else {
         "file"
     };
@@ -534,7 +587,78 @@ mod tests {
         assert!(!ok && out.starts_with("error: unknown tool"), "{out}");
         let (out, ok) = execute("read_file", &json!({}));
         assert!(!ok && out.contains("missing required arg: path"), "{out}");
-        let (out, ok) = execute("read_file", &json!({"path": "/definitely/not/here"}));
-        assert!(!ok && out.contains("cannot read"), "{out}");
+        let (out, ok) = execute("read_file", &json!({"path": "definitely/not/here"}));
+        assert!(!ok && out.contains("cannot access"), "{out}");
+    }
+
+    #[test]
+    fn tools_stay_inside_the_working_directory() {
+        // cargo runs unit tests from the crate root, which holds Cargo.toml.
+        let (out, ok) = execute("read_file", &json!({"path": "Cargo.toml"}));
+        assert!(ok, "{out}");
+        for (tool, args) in [
+            ("read_file", json!({"path": "/etc/passwd"})),
+            ("read_file", json!({"path": "../"})),
+            ("list_dir", json!({"path": "/"})),
+            ("stat", json!({"path": "/etc/hosts"})),
+            ("search", json!({"pattern": "root", "path": "/etc"})),
+        ] {
+            let (out, ok) = execute(tool, &args);
+            assert!(!ok && out.contains("outside the working directory"), "{tool} {args}: {out}");
+        }
+    }
+
+    #[test]
+    fn read_file_refuses_what_is_not_a_small_regular_file() {
+        let d = sandbox("big");
+        let big = d.join("big.txt");
+        fs::write(&big, vec![b'x'; MAX_FILE_BYTES as usize + 1]).unwrap();
+        let err = read_file(&json!({"path": big.to_string_lossy()})).unwrap_err();
+        assert!(err.contains("at most"), "{err}");
+        let err = read_file(&json!({"path": d.to_string_lossy()})).unwrap_err();
+        assert!(err.contains("not a regular file"), "{err}");
+        #[cfg(unix)]
+        {
+            let err = read_file(&json!({"path": "/dev/zero"})).unwrap_err();
+            assert!(err.contains("not a regular file"), "{err}");
+        }
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn read_file_counts_lines_like_wc_and_drops_cr() {
+        let d = sandbox("lines");
+        let p = write_file(&d, "crlf.txt", "a\r\nb\r\n");
+        let out = read_file(&json!({"path": p.to_string_lossy()})).unwrap();
+        assert!(out.contains("(2 lines, showing 1..2)"), "{out}");
+        assert!(out.contains("   2 | b\n"), "no carriage return is kept: {out:?}");
+        let p = write_file(&d, "empty.txt", "");
+        let out = read_file(&json!({"path": p.to_string_lossy()})).unwrap();
+        assert!(out.contains("(0 lines)"), "{out}");
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn search_stops_at_exactly_the_cap() {
+        let d = sandbox("cap");
+        let p = write_file(&d, "many.txt", &"hit\n".repeat(SEARCH_CAP + 10));
+        let out = search(&json!({"pattern": "hit", "path": p.to_string_lossy()})).unwrap();
+        let shown = out.lines().filter(|l| l.ends_with(": hit")).count();
+        assert_eq!(shown, SEARCH_CAP, "{}", out.lines().last().unwrap_or(""));
+        assert!(out.ends_with("... (truncated at 500 matches)\n"));
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn stat_says_symlink_for_a_symlink() {
+        let d = sandbox("link");
+        let target = write_file(&d, "t.txt", "x");
+        let link = d.join("l.txt");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let out = stat(&json!({"path": link.to_string_lossy()})).unwrap();
+        let v: Value = serde_json::from_str(&out).unwrap();
+        assert_eq!(v["type"], "symlink", "{out}");
+        let _ = fs::remove_dir_all(&d);
     }
 }

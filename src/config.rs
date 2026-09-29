@@ -80,9 +80,37 @@ pub fn load(flag: Option<&Path>) -> Result<Option<File>, String> {
     }
     let start = std::env::current_dir().map_err(|e| format!("current directory: {e}"))?;
     match implied_file(&start) {
-        Some(path) => read_at(&path).map(Some),
+        Some(path) => {
+            let file = read_at(&path)?;
+            implied_keys(&file)?;
+            Ok(Some(file))
+        }
         None => Ok(None),
     }
+}
+
+/// A file found in the working directory arrives with whatever repository was
+/// cloned there, so it does not get to choose which environment variable is a
+/// secret: `api_key_env = "GITHUB_TOKEN"` beside a `base_url` it also chose
+/// would send that token to its own server. It may name each section's own
+/// variable; any other name needs a file the caller named with `--config` or
+/// `CLANK_CONFIG`.
+fn implied_keys(file: &File) -> Result<(), String> {
+    let sections = [
+        ("[clank]", file.clank.api_key_env.as_deref(), "CLANK_API_KEY"),
+        ("[web.brave]", file.web.brave.api_key_env.as_deref(), "BRAVE_API_KEY"),
+        ("[web.tavily]", file.web.tavily.api_key_env.as_deref(), "TAVILY_API_KEY"),
+    ];
+    for (label, named, own) in sections {
+        if let Some(name) = named.filter(|n| *n != own) {
+            return Err(format!(
+                "{}: {label}.api_key_env names {name}; a config found in the working directory \
+                 may only name {own}. Pass the file with --config or CLANK_CONFIG to name another variable",
+                file.path.display()
+            ));
+        }
+    }
+    Ok(())
 }
 
 fn read_at(path: &Path) -> Result<File, String> {
@@ -186,6 +214,8 @@ pub fn env_var(name: &str) -> Option<String> {
 /// `named` is `api_key_env` and replaces `well_known` when the file sets it.
 /// An inline `api_key` is used only when that variable is unset. `env` is the
 /// lookup so tests can pass a table instead of the process environment.
+// `clank-jev` compiles this module too and takes its keys from the environment only.
+#[allow(dead_code)]
 pub fn key_from(
     named: Option<&str>,
     inline: Option<&str>,
@@ -270,6 +300,19 @@ mod tests {
         assert_eq!(key_from(None, Some("  "), Some("BRAVE_API_KEY"), &unset), None);
         assert_eq!(redact("token secret leaked", "secret"), "token *** leaked");
         assert_eq!(redact("untouched", ""), "untouched");
+    }
+
+    #[test]
+    fn an_implied_file_names_only_its_own_key_variables() {
+        let mut file = parse("[clank]\napi_key_env = \"CLANK_API_KEY\"\n[web.brave]\napi_key_env = \"BRAVE_API_KEY\"\n").unwrap();
+        assert!(implied_keys(&file).is_ok());
+        file = parse("[clank]\napi_key_env = \"GITHUB_TOKEN\"\n").unwrap();
+        let err = implied_keys(&file).unwrap_err();
+        assert!(err.contains("GITHUB_TOKEN") && err.contains("--config"), "{err}");
+        file = parse("[web.tavily]\napi_key_env = \"AWS_SECRET_ACCESS_KEY\"\n").unwrap();
+        assert!(implied_keys(&file).is_err());
+        let sample = parse(include_str!("../fixtures/clank.config.toml")).unwrap();
+        assert!(implied_keys(&sample).is_ok(), "the documented sample stays usable in place");
     }
 
     #[test]

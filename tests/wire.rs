@@ -30,6 +30,8 @@ enum Reply {
         arguments: &'static str,
     },
     HttpError(u16),
+    /// Text, then the connection closes: no finish_reason and no [DONE].
+    Cut(&'static str),
 }
 
 struct Stub {
@@ -83,6 +85,10 @@ impl Reply {
                 )
                 .into_bytes()
             }
+            Reply::Cut(text) => format!(
+                "data: {}\n\n",
+                json!({"choices":[{"index":0,"delta":{"content":text},"finish_reason":null}]})
+            ),
             other => other
                 .chunks()
                 .iter()
@@ -121,7 +127,7 @@ impl Reply {
                     "function":{"name":name,"arguments":arguments}}]},"finish_reason":null}]}),
                 json!({"choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}]}),
             ],
-            Reply::HttpError(_) => Vec::new(),
+            Reply::HttpError(_) | Reply::Cut(_) => Vec::new(),
         }
     }
 }
@@ -899,3 +905,44 @@ fn the_run_event_names_the_prompt_that_produced_the_answer() {
     );
 }
 
+#[test]
+fn a_stream_that_stops_before_the_server_finishes_is_a_failure() {
+    let stub = Stub::start(vec![Reply::Cut("half an ans")]);
+    let run = clank(&["--base-url", &stub.base_url, "--model", "stub", "-m", "ping"], "");
+    assert_eq!(run.code, 1, "a cut-off answer must not exit 0; stderr: {}", run.stderr);
+    assert!(run.stderr.contains("ended before"), "{}", run.stderr);
+}
+
+#[test]
+fn tool_arguments_that_are_not_json_come_back_to_the_model_as_an_error() {
+    let stub = Stub::start(vec![
+        Reply::ToolCall { name: "read_file", arguments: r#"{"path": "fixtures/no"# },
+        Reply::Text("could not read it"),
+    ]);
+    let run = clank(
+        &["--base-url", &stub.base_url, "--model", "stub", "--tools", "-m", "read it"],
+        "",
+    );
+    assert_eq!(run.code, 0, "stderr: {}", run.stderr);
+    let reqs = stub.requests();
+    let tool = messages(&reqs[1]).iter().find(|m| m["role"] == "tool").expect("a tool message");
+    let text = tool["content"].as_str().unwrap();
+    assert!(text.starts_with("error: arguments are not valid JSON"), "{text}");
+}
+
+#[test]
+fn a_context_tree_naming_a_missing_file_fails_before_any_request() {
+    let dir = std::env::temp_dir().join(format!("clank-wire-tree-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let tree = dir.join("tree.json");
+    std::fs::write(&tree, r#"[{"text": "a"}, {"file": "definitely/not/here.txt"}]"#).unwrap();
+    let stub = Stub::start(vec![Reply::Text("should not be asked")]);
+    let run = clank(
+        &["--base-url", &stub.base_url, "--model", "stub", "-c", tree.to_str().unwrap(), "-m", "sum up"],
+        "",
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+    assert_eq!(run.code, 1, "stderr: {}", run.stderr);
+    assert!(run.stderr.contains("definitely/not/here.txt"), "{}", run.stderr);
+    assert!(stub.requests().is_empty(), "the model was asked about a context it never got");
+}

@@ -210,12 +210,27 @@ pub fn parse(source: &str) -> Result<Tree, crate::Fail> {
 fn parse_node(v: &serde_json::Value) -> Result<Node, crate::Fail> {
     let n: Node = serde_json::from_value(v.clone())
         .map_err(|e| crate::Fail::Usage(format!("bad context node: {e}")))?;
+    check_node(&n)?;
+    Ok(n)
+}
+
+/// Every node, nested ones included, is one of the three shapes. A file leaf
+/// is the file, so `text` or `children` beside it would be dropped unread.
+fn check_node(n: &Node) -> Result<(), crate::Fail> {
     if n.text.is_none() && n.file.is_none() && n.children.is_none() {
         return Err(crate::Fail::Usage(
             "context node needs a 'text', 'file', or 'children' key".into(),
         ));
     }
-    Ok(n)
+    if n.file.is_some() && (n.text.is_some() || n.children.is_some()) {
+        return Err(crate::Fail::Usage(
+            "context node has 'file' and also 'text' or 'children'; split it into two nodes".into(),
+        ));
+    }
+    for c in n.children.iter().flatten() {
+        check_node(c)?;
+    }
+    Ok(())
 }
 
 /// Load a context file (JSON tree or plain text).
@@ -235,25 +250,24 @@ impl Tree {
         Ok(out)
     }
 
-    /// Rendered context block handed to the model.
-    pub fn render(&self) -> String {
-        match self.leaves() {
-            Ok(leaves) => leaves
-                .iter()
-                .map(|l| match l {
-                    Leaf::Text(t) => t.clone(),
-                    Leaf::File { path, content } => format!("─── {path} ───\n{content}"),
-                })
-                .collect::<Vec<_>>()
-                .join("\n\n"),
-            Err(e) => format!("[context error: {}]", e.msg()),
-        }
+    /// Rendered context block handed to the model. A leaf that cannot be read
+    /// fails the run: sending the model an error string in place of the
+    /// evidence would get an answer, and exit 0, about nothing.
+    pub fn render(&self) -> Result<String, crate::Fail> {
+        Ok(self
+            .leaves()?
+            .iter()
+            .map(|l| match l {
+                Leaf::Text(t) => t.clone(),
+                Leaf::File { path, content } => format!("─── {path} ───\n{content}"),
+            })
+            .collect::<Vec<_>>()
+            .join("\n\n"))
     }
 }
 
 fn collect(n: &Node, out: &mut Vec<Leaf>) -> Result<(), crate::Fail> {
     if let Some(path) = &n.file {
-        // file takes precedence over text/children if both are present.
         let content = std::fs::read_to_string(path)
             .map_err(|e| crate::Fail::IO(format!("cannot read context file {}: {e}", path)))?;
         out.push(Leaf::File { path: path.clone(), content });
@@ -304,7 +318,7 @@ mod tests {
     #[test]
     fn parse_routes_jsonl_to_transcript_node() {
         let tree = parse(TRANSCRIPT).unwrap();
-        let rendered = tree.render();
+        let rendered = tree.render().unwrap();
         assert!(rendered.contains("assistant: done"));
         assert!(rendered.contains("> read_file path=a"));
     }
@@ -350,7 +364,7 @@ mod tests {
         // A tool definition, a commit record, any typed JSON: data, not events.
         let definition = r#"{"type":"function","function":{"name":"search"}}"#;
         assert!(!is_clank_jsonl(definition));
-        let rendered = parse_evidence(definition).render();
+        let rendered = parse_evidence(definition).render().unwrap();
         assert!(
             rendered.contains("function"),
             "it must reach the model as text: {rendered}"
@@ -364,7 +378,7 @@ mod tests {
         let provenance = r#"{"type":"run","clank":"0.1.0","model":"stub"}"#;
         assert!(is_clank_jsonl(provenance));
         let tree = parse_evidence(provenance);
-        let rendered = tree.render();
+        let rendered = tree.render().unwrap();
         assert!(rendered.contains("\"model\":\"stub\""), "{rendered}");
     }
 
@@ -372,11 +386,11 @@ mod tests {
     fn a_pipe_may_carry_any_json_shape() {
         // A JSON array of objects that are not context nodes is still evidence.
         let array = r#"[{"type":"function","function":{"name":"search"}}]"#;
-        let rendered = parse_evidence(array).render();
+        let rendered = parse_evidence(array).render().unwrap();
         assert!(rendered.contains("search"), "{rendered}");
         // An object that is not a node, likewise.
         let object = r#"{"type":"commit","sha":"abc"}"#;
-        let rendered = parse_evidence(object).render();
+        let rendered = parse_evidence(object).render().unwrap();
         assert!(rendered.contains("abc"), "{rendered}");
         // A file someone wrote on purpose is still checked.
         assert!(parse(r#"[{"txt":"typo"}]"#).is_err());
@@ -386,5 +400,24 @@ mod tests {
     fn an_empty_tool_result_renders_no_indented_block() {
         let source = "{\"type\":\"tool_result\",\"name\":\"stat\",\"ok\":true,\"output\":\"\"}";
         assert_eq!(render_transcript(source), "< stat ok");
+    }
+
+    #[test]
+    fn a_missing_file_leaf_is_an_error_not_a_string_for_the_model() {
+        let tree = parse(r#"[{"text": "a"}, {"file": "definitely/not/here.txt"}]"#).unwrap();
+        let err = tree.render().unwrap_err();
+        assert_eq!(err.code(), 1, "a missing file is IO: {}", err.msg());
+        assert!(err.msg().contains("definitely/not/here.txt"), "{}", err.msg());
+    }
+
+    #[test]
+    fn a_node_with_a_file_and_more_is_rejected_at_any_depth() {
+        let err = parse(r#"{"file": "a.txt", "text": "dropped"}"#).err().expect("file beside text");
+        assert_eq!(err.code(), 2);
+        let err = parse(r#"{"children": [{"text": "ok"}, {"file": "a.txt", "children": []}]}"#)
+            .err()
+            .expect("nested file beside children");
+        assert!(err.msg().contains("split it"), "{}", err.msg());
+        assert!(parse(r#"{"children": [{}]}"#).is_err(), "an empty nested node says nothing");
     }
 }
