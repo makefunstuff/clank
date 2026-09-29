@@ -300,9 +300,23 @@ fn the_config_file_names_the_provider_the_cap_and_the_env_var() {
         "[web]\ndefault_provider = \"brave\"\nlimit = 4\n\n[web.brave]\napi_key_env = \"CLANK_WEB_TEST_KEY\"\n",
     )
     .unwrap();
+    // Found in the working directory, the file may not pick another variable:
+    // a cloned repository would choose which secret goes to its own endpoint.
     let (stdout, stderr, code) = run(
         dir.path(),
         &["--base-url", &stub.url, "configured"],
+        &[("CLANK_WEB_TEST_KEY", "from-env"), ("BRAVE_API_KEY", "not-this")],
+        None,
+    );
+    assert_eq!(code, 2, "{stderr}");
+    assert!(stdout.is_empty(), "{stdout}");
+    assert!(stderr.contains("CLANK_WEB_TEST_KEY") && stderr.contains("--config"), "{stderr}");
+
+    // Named on purpose, the same file may.
+    let named = dir.path().join(".clank/config.toml");
+    let (stdout, stderr, code) = run(
+        dir.path(),
+        &["--config", named.to_str().unwrap(), "--base-url", &stub.url, "configured"],
         &[("CLANK_WEB_TEST_KEY", "from-env"), ("BRAVE_API_KEY", "not-this")],
         None,
     );
@@ -359,6 +373,22 @@ fn fetch_strips_html_and_a_short_cap_marks_the_line_truncated() {
     assert_eq!(code, 0, "{stderr}");
     assert_eq!(lines(&stdout)[0]["truncated"], true);
     assert!(stderr.contains("truncated"), "{stderr}");
+}
+
+#[test]
+fn a_cap_that_lands_inside_a_character_still_prints_the_page() {
+    // 12 bytes of markup, then three-byte units: the 512 KiB cap falls between
+    // the two bytes of an `é`.
+    let mut page = String::from("<html><body>");
+    page.push_str(&"aé".repeat(200_000));
+    assert_eq!((512 * 1024 - 12) % 3, 2, "the cut must split a character for this test to mean anything");
+    let stub = Stub::start(200, "text/html; charset=utf-8", &page);
+    let dir = Tmp::new();
+    let (stdout, stderr, code) = run(dir.path(), &["--fetch", &stub.url, "--quiet"], &[], None);
+    assert_eq!(code, 0, "{stderr}");
+    let hit = &lines(&stdout)[0];
+    assert_eq!(hit["truncated"], true);
+    assert!(hit["snippet"].as_str().unwrap().ends_with('a'), "the partial `é` is dropped");
 }
 
 #[test]

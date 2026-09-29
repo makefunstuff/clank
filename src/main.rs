@@ -326,7 +326,7 @@ fn run_inner(args: &Args) -> Result<i32, Fail> {
     if let Some(t) = tree {
         head.push(json!({
             "role": "user",
-            "content": format!("Context (tree, document order):\n\n{}", t.render()),
+            "content": format!("Context (tree, document order):\n\n{}", t.render()?),
         }));
     }
     // The prompt is the last of the shared messages: with --each, everything
@@ -495,7 +495,7 @@ fn emit_run_header(args: &Args, settings: &Settings, system: &str, tools_enabled
             // prompt change because this changes when the text does.
             "prompt": prompt_id(system),
             "model": settings.model,
-            "base_url": settings.base_url,
+            "base_url": redacted_url(&settings.base_url),
             "tools": tools_enabled,
             "thinking": args.thinking,
             "argv": redacted_argv(&std::env::args().collect::<Vec<_>>()),
@@ -532,6 +532,19 @@ fn redacted_argv(argv: &[String]) -> Vec<String> {
         }
     }
     out
+}
+
+/// A URL with credentials in it (`https://user:key@host/v1`) keeps its host
+/// and loses the `user:key@`, so a trace names the endpoint and not the secret.
+fn redacted_url(url: &str) -> String {
+    let Some((scheme, rest)) = url.split_once("://") else {
+        return url.to_string();
+    };
+    let end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    match rest[..end].rfind('@') {
+        Some(at) => format!("{scheme}://***@{}", &rest[at + 1..]),
+        None => url.to_string(),
+    }
 }
 
 /// Assistant text streams to stdout as it arrives. In `--jsonl` mode stdout is
@@ -675,6 +688,11 @@ impl<'a> Runner<'a> {
         emit: &mut dyn FnMut(&str),
         on_thinking: &mut dyn FnMut(&str),
     ) -> Result<client::Round, Fail> {
+        let mut thought = false;
+        let mut noting = |delta: &str| {
+            thought |= !delta.is_empty();
+            on_thinking(delta);
+        };
         let round = client::stream_round(
             &self.agent,
             client::Request {
@@ -689,11 +707,11 @@ impl<'a> Runner<'a> {
                 debug_path: self.debug.as_deref(),
             },
             emit,
-            on_thinking,
+            &mut noting,
         )?;
         // Reasoning streams to stderr and does not end its own line, so the next
-        // diagnostic starts on a fresh one.
-        if self.args.show_thinking {
+        // diagnostic starts on a fresh one. No reasoning, no line to end.
+        if self.args.show_thinking && thought {
             let _ = writeln!(std::io::stderr());
         }
         Ok(round)
@@ -792,9 +810,19 @@ impl<'a> Runner<'a> {
                 messages.push(json!({ "role": "assistant", "content": content, "tool_calls": assistant_tcs }));
 
                 for (tc, id) in round.tool_calls.iter().zip(ids) {
-                    let args_v: Value = serde_json::from_str(&tc.arguments).unwrap_or(Value::Null);
-                    out.tool_call(&tc.name, &args_v);
-                    let (text, ok) = tools::execute(&tc.name, &args_v);
+                    // Arguments that do not parse are the model's mistake, and it
+                    // is told so, rather than having the call run on `null`.
+                    let raw = if tc.arguments.trim().is_empty() { "{}" } else { tc.arguments.as_str() };
+                    let (text, ok) = match serde_json::from_str::<Value>(raw) {
+                        Ok(args_v) => {
+                            out.tool_call(&tc.name, &args_v);
+                            tools::execute(&tc.name, &args_v)
+                        }
+                        Err(e) => {
+                            out.tool_call(&tc.name, &Value::String(tc.arguments.clone()));
+                            (format!("error: arguments are not valid JSON ({e}): {}", tc.arguments), false)
+                        }
+                    };
                     out.tool_result(&tc.name, ok, &text);
                     messages.push(json!({ "role": "tool", "tool_call_id": id, "content": text }));
                 }
@@ -943,6 +971,13 @@ mod tests {
         let missing = payload("@/definitely/not/here").unwrap_err();
         assert_eq!(missing.code(), 1, "a missing file is an IO failure, not a usage error");
         let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn a_url_loses_its_credentials_and_keeps_its_host() {
+        assert_eq!(redacted_url("https://user:sk-1@api.example/v1"), "https://***@api.example/v1");
+        assert_eq!(redacted_url("http://127.0.0.1:8080/v1"), "http://127.0.0.1:8080/v1");
+        assert_eq!(redacted_url("http://host/v1?next=a@b"), "http://host/v1?next=a@b");
     }
 
     #[test]

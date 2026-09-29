@@ -20,11 +20,13 @@
 //!   `TYPESAFE_API_KEY` (or `JEV_API_KEY`, `JEV_CLI_API_KEY`) -> api.typesafe.ai
 //!   `OPENROUTER_API_KEY` -> openrouter.ai Decisions endpoint (the same Jev)
 //!
-//! Optional `./.clank/config.toml` supplies `[clank].model` and `[clank].base_url`
-//! when `--model` and `--base-url` are absent. `--config` or `CLANK_CONFIG`
-//! names a different file. `[web]` is ignored. A missing file in the working
-//! directory leaves the provider built-ins and the environment variables above
-//! in charge. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
+//! Optional `./.clank/config.toml` supplies `[clank].timeout` when `--timeout`
+//! is absent. `--config` or `CLANK_CONFIG` names a different file. The rest of
+//! `[clank]` is the chat endpoint for `clank` and is not read here: a chat
+//! server's URL is not a Jev endpoint, and a file that could name the endpoint
+//! would also choose where the key above is sent. `[web]` is ignored. The
+//! endpoint and model are `--base-url` and `--model`, otherwise the provider's
+//! own. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
 //!
 //! Exit codes: 0 decided and passed every gate · 1 a gate failed (the decision is
 //! usable, you asked not to trust it) · 2 usage · 3 provider, network or credentials.
@@ -500,39 +502,36 @@ fn configured_str(value: &Option<String>) -> Option<String> {
     value.as_ref().map(|s| s.trim().to_string()).filter(|s| !s.is_empty())
 }
 
-/// Provider credentials stay above `[clank]`. A Brave key in the environment,
-/// or a `[web]` section, does not become a Jev credential.
+/// Provider credentials come from the environment only. A Brave key, a
+/// `[web]` section, or `[clank]`'s chat key does not become a Jev credential,
+/// and `[clank]`'s chat endpoint and model are not the Jev route.
 fn resolve_provider(args: &Args, clank: &config::Clank) -> Result<Route, (String, i32)> {
     let typesafe_key = ["TYPESAFE_API_KEY", "JEV_API_KEY", "JEV_CLI_API_KEY"].iter().find_map(|k| config::env_var(k));
     let openrouter_key = config::env_var("OPENROUTER_API_KEY");
-    let file_key = config::key_from(clank.api_key_env.as_deref(), clank.api_key.as_deref(), None, config::env_var);
 
     let (provider, key) = match args.provider.as_str() {
         "kev" | "local" => (Provider::Kev, String::new()),
         "typesafe" => (
             Provider::Typesafe,
-            typesafe_key.or(file_key).ok_or_else(|| {
+            typesafe_key.ok_or_else(|| {
                 ("no TypeSafe key: set TYPESAFE_API_KEY (or JEV_API_KEY)".to_string(), PROVIDER)
             })?,
         ),
         "openrouter" => (
             Provider::Openrouter,
-            openrouter_key.or(file_key).ok_or_else(|| {
+            openrouter_key.ok_or_else(|| {
                 ("no OpenRouter key: set OPENROUTER_API_KEY".to_string(), PROVIDER)
             })?,
         ),
         "auto" => match (typesafe_key, openrouter_key) {
             (Some(k), _) => (Provider::Typesafe, k),
             (None, Some(k)) => (Provider::Openrouter, k),
-            (None, None) => match file_key {
-                Some(k) => (Provider::Typesafe, k),
-                None => {
-                    return Err((
-                        "no Jev credentials: set TYPESAFE_API_KEY (or JEV_API_KEY), or OPENROUTER_API_KEY".into(),
-                        PROVIDER,
-                    ))
-                }
-            },
+            (None, None) => {
+                return Err((
+                    "no Jev credentials: set TYPESAFE_API_KEY (or JEV_API_KEY), or OPENROUTER_API_KEY".into(),
+                    PROVIDER,
+                ))
+            }
         },
         other => {
             return Err((format!("unknown --provider {other:?} (auto, typesafe, openrouter, kev)"), USAGE))
@@ -554,8 +553,8 @@ fn resolve_provider(args: &Args, clank: &config::Clank) -> Result<Route, (String
     }
     Ok(Route {
         provider,
-        model: configured_str(&args.model).or_else(|| configured_str(&clank.model)).unwrap_or_else(|| default_model.to_string()),
-        url: configured_str(&args.base_url).or_else(|| configured_str(&clank.base_url)).unwrap_or_else(|| default_url.to_string()),
+        model: configured_str(&args.model).unwrap_or_else(|| default_model.to_string()),
+        url: configured_str(&args.base_url).unwrap_or_else(|| default_url.to_string()),
         key,
         timeout,
     })
@@ -670,6 +669,12 @@ fn run(args: Args) -> i32 {
         }
     };
     let clank = file.map(|f| f.clank).unwrap_or_default();
+    if let Some(p) = args.min_prob {
+        if !(0.0..=1.0).contains(&p) {
+            eprintln!("clank-jev: --min-prob {p} is outside 0..=1");
+            return USAGE;
+        }
+    }
     let questions = match questions_from_args(&args) {
         Ok(q) => q,
         Err(e) => {

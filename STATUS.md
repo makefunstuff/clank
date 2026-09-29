@@ -59,8 +59,9 @@ says where the project is, what is open, and how to check any of it.
   `typesafe`, `openrouter`, `kev`. `clank-web`: one search or one fetch,
   providers `brave` (the default) and `tavily`. Optional `./.clank/config.toml`
   in the working directory (`--config` or `CLANK_CONFIG` to name another file):
-  `[clank]` is the model and endpoint for `clank` and `clank-jev`; `[web]` is
-  search settings for `clank-web`. No built-in chat model or base URL.
+  `[clank]` is the model and endpoint for `clank` (`clank-jev` reads only its
+  `timeout`); `[web]` is search settings for `clank-web`. No built-in chat model
+  or base URL.
 - 121 tests (`cargo test`), all against stub servers: no model, no key, no
   network. `tests/wire.rs` (24, the protocol), `tests/jev.rs` (10, the decision
   stage), `tests/jev_ci_stub.rs` (1), `tests/web.rs` (10, the search stage),

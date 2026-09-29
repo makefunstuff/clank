@@ -31,14 +31,14 @@ Credentials come from the environment, never from argv:
 | `kev` | `127.0.0.1:8009/v1/systemone` (`--base-url` to move it) | none | `kev-latest` |
 
 `./.clank/config.toml` is optional, and it is read from the working directory
-only. `--config PATH` or `CLANK_CONFIG` names a different file.
-`[clank].base_url` and `[clank].model` apply when `--base-url` and `--model`
-were not passed, and they replace the provider built-ins above. `--timeout` wins
-over `[clank].timeout`, which wins over 60 seconds. Provider credentials stay
-the variables in the table; `[clank].api_key_env` names the fallback variable
-when those are unset. `[web]` is search configuration for `clank-web`. A missing
-file in the working directory leaves the flags and the provider environment in
-charge. `CLANK_MODEL` and `CLANK_BASE_URL` belong to `clank`.
+only. `--config PATH` or `CLANK_CONFIG` names a different file. `--timeout` wins
+over `[clank].timeout`, which wins over 60 seconds. That is the only key
+`clank-jev` reads: the endpoint and model are `--base-url` and `--model`,
+otherwise the provider built-ins above, and credentials are only the variables
+in the table. The rest of `[clank]` is the chat endpoint for `clank`, and a file
+that could name the Jev endpoint would also choose where the Jev key is sent.
+`[web]` is search configuration for `clank-web`. `CLANK_MODEL` and
+`CLANK_BASE_URL` belong to `clank`.
 
 `kev` is a local System One server; [kev](https://github.com/jaredpalmer/kev) is
 a trained Jev-family model (LoRA + pointer readout head on Qwen, one prefill

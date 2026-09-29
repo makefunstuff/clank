@@ -263,6 +263,14 @@ fn read_capped(resp: &mut ureq::http::Response<ureq::Body>, cap: usize) -> Resul
     }
     match String::from_utf8(buf) {
         Ok(s) => Ok((s, truncated)),
+        // The cap can land inside a multi-byte character. That is the cut, not
+        // bad text: drop the partial character. An error mid-body is bad text.
+        Err(e) if truncated && e.utf8_error().error_len().is_none() => {
+            let valid = e.utf8_error().valid_up_to();
+            let mut bytes = e.into_bytes();
+            bytes.truncate(valid);
+            String::from_utf8(bytes).map(|s| (s, true)).map_err(|_| "response was not UTF-8".into())
+        }
         Err(_) => Err("response was not UTF-8".into()),
     }
 }

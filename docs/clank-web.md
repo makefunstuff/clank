@@ -46,10 +46,10 @@ flag is absent. A path given that way has to exist. A missing
 `./.clank/config.toml` leaves flags and the environment in charge.
 
 Precedence is flags, then the environment, then the file, then built-ins.
-`clank` and `clank-jev` read `[clank]` (model, endpoint, timeout, token cap).
-`clank-web` reads `[web]` and leaves `[clank]` alone, so a chat `base_url` is
-not a search endpoint. `[web]` is not required: a file that only names a Brave
-key does not change `clank` or `clank-jev`.
+`clank` reads `[clank]` (model, endpoint, timeout, token cap); `clank-jev` reads
+only `[clank].timeout`. `clank-web` reads `[web]` and leaves `[clank]` alone, so
+a chat `base_url` is not a search endpoint. `[web]` is not required: a file that
+only names a Brave key does not change `clank` or `clank-jev`.
 
 The sample is [`fixtures/clank.config.toml`](../fixtures/clank.config.toml). It
 names environment variables. It does not contain a key.
@@ -86,8 +86,8 @@ that table.
 
 | key | meaning |
 |---|---|
-| `[clank].base_url` / `model` | chat endpoint for `clank` and `clank-jev`, under the flags and `CLANK_BASE_URL` / `CLANK_MODEL` |
-| `[clank].api_key_env` | variable holding the chat key; `CLANK_API_KEY` and `--api-key` win |
+| `[clank].base_url` / `model` | chat endpoint for `clank`, under the flags and `CLANK_BASE_URL` / `CLANK_MODEL` |
+| `[clank].api_key_env` | variable holding the chat key; `CLANK_API_KEY` and `--api-key` win. A file found in the working directory may only name `CLANK_API_KEY` here (and `BRAVE_API_KEY` / `TAVILY_API_KEY` in `[web.*]`); another name needs `--config` or `CLANK_CONFIG` |
 | `[clank].timeout` / `max_tokens` / `max_rounds` | under the flags (and `CLANK_TIMEOUT`) and above 600 / 8192 / 12 |
 | `[web].default_provider` | `brave` (the built-in) or `tavily`; `--provider` wins |
 | `[web].limit` | 1..=20, built-in 5; `--limit` wins |

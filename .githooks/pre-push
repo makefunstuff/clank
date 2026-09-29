@@ -8,6 +8,11 @@
 # Enable once per clone:
 #   git config core.hooksPath .githooks
 #
+# Data leaves the machine: with a TypeSafe or OpenRouter key set, the pushed
+# diff and commit message are sent to that provider on every push. Only a local
+# kev on 127.0.0.1:8009 keeps them here. Do not enable this on a repository whose
+# code may not go to a third party.
+#
 # git hands pre-push "<local ref> <local sha> <remote ref> <remote sha>" lines
 # on stdin. The push is read from the first line; a delete (all-zero local) and
 # a run with nothing on stdin are both nothing to decide about.

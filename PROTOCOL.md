@@ -51,11 +51,13 @@ two-channel contract. `--no-tools` forces the blind case, and then the prompt
 carries one extra sentence: the context is empty, answer from what you know, and
 never cite a file or line you were not given.
 
-Neither mode is a sandbox: clank runs with your permissions and `read_file`
-reaches any path you can read — an absolute path, `~/.ssh`, `/etc`. `--tools`
-bounds what the model can *do* (observe, nothing else), not what it can *reach*.
-The pipe bounds the input; for containment, run clank as a user that cannot read
-what you are protecting.
+The tools are confined to the working directory: every path must resolve,
+symlinks followed, to it or below it, so `~/.ssh`, `/etc` and `../` are refused
+as a tool error the model sees. Evidence from anywhere else is piped in by the
+shell. `read_file` reads regular files of at most 4 MB. This is still not a
+sandbox: clank runs with your permissions, and the working directory is whatever
+you started it in. For containment, run clank as a user that cannot read what
+you are protecting.
 
 ## The request sequence
 
@@ -271,7 +273,7 @@ same reasons the decision stage is not a flag:
 | R1 composition | the shell already composes a search with a summary | `clank-web "query" \| clank -m "summarize with citations"` is the whole feature |
 | invariant 3 | a tool round would read the network on an input the pipe cannot show | the query is the invocation, and the results are what the next stage reads |
 | invariant 4 | clank's network is the model endpoint | the search APIs live in the binary whose job is those APIs |
-| R4 no memory | a search key would become a clank tool setting | `.clank/config.toml` is optional and shared. `clank` and `clank-jev` read `[clank]`. `clank-web` reads `[web]`. A missing file in the working directory leaves flags and the environment in charge |
+| R4 no memory | a search key would become a clank tool setting | `.clank/config.toml` is optional and shared. `clank` reads `[clank]`, `clank-jev` only `[clank].timeout`. `clank-web` reads `[web]`. A missing file in the working directory leaves flags and the environment in charge |
 
 Discovery is the working directory. Each binary loads `./.clank/config.toml`
 when that file exists, and does not search parent directories. `--config PATH`
@@ -279,8 +281,11 @@ names a file. `CLANK_CONFIG` names one when the flag is absent. An explicit path
 that is missing is usage (exit `2` on `clank`, `clank-jev`, and `clank-web`). A
 missing `./.clank/config.toml` is not an error. Value precedence stays flags,
 then the environment, then the file, then built-ins. The key is the environment
-variable named by `api_key_env`. The sample at `fixtures/clank.config.toml`
-names variables and does not carry a key.
+variable named by `api_key_env`. A file found in the working directory came with
+whatever was cloned there, so it may name only each section's own variable
+(`CLANK_API_KEY`, `BRAVE_API_KEY`, `TAVILY_API_KEY`); any other name is usage
+unless the file was named with `--config` or `CLANK_CONFIG`. The sample at
+`fixtures/clank.config.toml` names variables and does not carry a key.
 
 `clank --list-tools` stays the four read-only filesystem observers. One
 invocation is one request: no crawl, no JavaScript, no second fetch of a link
