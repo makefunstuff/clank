@@ -72,10 +72,11 @@ says where the project is, what is open, and how to check any of it.
 - CI on every push and pull request: warnings are errors, `cargo test`
   (including `tests/jev_ci_stub.rs`, which drives `clank-jev` against a local
   stub — no secret and no provider), the docs wrapping check, and
-  `cargo publish --dry-run --locked`. Release on a `v*` tag: three native
-  targets, each archive smoke-tested before it is attached, published only when
-  all of them are up. crates.io is a separate manual `workflow_dispatch` until
-  that path has been exercised once.
+  `cargo publish --dry-run --locked`. Release on a `v*` tag: two native targets
+  (Linux x86_64, macOS arm64; the Intel mac runner never started), each archive
+  smoke-tested before it is attached, published only when all of them are up.
+  crates.io is a separate manual `workflow_dispatch` until that path has been
+  exercised once.
 - `.jev/rules/` holds 26 rules, in three groups: the contract's invariants, the
   taste the code is held to (weightless code, needless abstraction, avoidable
   copies, silent fallbacks, a value with two homes, comments that restate the
