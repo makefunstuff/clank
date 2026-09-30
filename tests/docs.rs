@@ -72,14 +72,11 @@ fn event_types() -> Vec<String> {
 
 #[test]
 fn every_flag_is_documented_in_the_reference_docs() {
-    let readme = read("README.md");
-    let cheatsheet = read("CHEATSHEET.md");
+    let clank = read("docs/clank.md");
     let mut missing: Vec<String> = Vec::new();
     for flag in long_flags() {
-        for (name, doc) in [("README.md", &readme), ("CHEATSHEET.md", &cheatsheet)] {
-            if !doc.contains(&flag) {
-                missing.push(format!("{flag} in {name}"));
-            }
+        if !clank.contains(&flag) {
+            missing.push(format!("{flag} in docs/clank.md"));
         }
     }
     assert!(
@@ -90,14 +87,11 @@ fn every_flag_is_documented_in_the_reference_docs() {
 
 #[test]
 fn every_clank_jev_flag_is_documented_in_the_reference_docs() {
-    let readme = read("README.md");
-    let cheatsheet = read("CHEATSHEET.md");
+    let jev = read("docs/clank-jev.md");
     let mut missing: Vec<String> = Vec::new();
     for flag in jev_flags() {
-        for (name, doc) in [("README.md", &readme), ("CHEATSHEET.md", &cheatsheet)] {
-            if !doc.contains(&flag) {
-                missing.push(format!("{flag} in {name}"));
-            }
+        if !jev.contains(&flag) {
+            missing.push(format!("{flag} in docs/clank-jev.md"));
         }
     }
     assert!(
@@ -108,16 +102,13 @@ fn every_clank_jev_flag_is_documented_in_the_reference_docs() {
 
 #[test]
 fn every_clank_web_flag_is_documented_in_the_reference_docs() {
-    let readme = read("README.md");
-    let cheatsheet = read("CHEATSHEET.md");
+    let web = read("docs/clank-web.md");
     let flags = parse_long_flags(env!("CARGO_BIN_EXE_clank-web"));
     assert!(flags.len() > 5, "parsed too few flags: {flags:?}");
     let mut missing: Vec<String> = Vec::new();
     for flag in flags {
-        for (name, doc) in [("README.md", &readme), ("CHEATSHEET.md", &cheatsheet)] {
-            if !doc.contains(&flag) {
-                missing.push(format!("{flag} in {name}"));
-            }
+        if !web.contains(&flag) {
+            missing.push(format!("{flag} in docs/clank-web.md"));
         }
     }
     assert!(
